@@ -1,0 +1,18 @@
+# Binaries and Caches
+__pycache__/
+*.pyc
+bin/
+dist/
+
+# Local Environment / Secrets
+.env
+auth.json
+*.pem
+
+# IDEs
+.vscode/
+.idea/
+
+# Database files
+*.db
+*.duckdb
