@@ -1,0 +1,26 @@
+services:
+  redis:
+    image: redis:latest
+    command: redis-server --save "" --appendonly no
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis-import:
+    build:
+      context: ..
+      dockerfile: docker/import/Dockerfile
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../data:/app/data:ro
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    restart: "no"
+
