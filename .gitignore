@@ -12,6 +12,7 @@ auth.json
 # IDEs
 .vscode/
 .idea/
+*.iml
 
 # Database files
 *.db
