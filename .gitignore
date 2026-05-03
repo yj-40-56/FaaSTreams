@@ -16,3 +16,6 @@ auth.json
 # Database files
 *.db
 *.duckdb
+
+data/
+*.csv
