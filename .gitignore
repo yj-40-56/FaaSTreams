@@ -16,3 +16,5 @@ auth.json
 # Database files
 *.db
 *.duckdb
+
+.venv/
