@@ -1,0 +1,2 @@
+duckdb
+redis
