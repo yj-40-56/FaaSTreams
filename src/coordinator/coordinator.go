@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"log"
 	"strconv"
 	"time"
 
@@ -93,7 +93,7 @@ func (c *Coordinator) handleEvent(ctx context.Context, event *AISEvent) {
 	if c.initialized == false {
 		c.windowEnd = event.Timestamp.Add(c.windowSize)
 		c.initialized = true
-		fmt.Printf("First window ends at: %s\n", c.windowEnd.Format("15:04:05"))
+		log.Printf("First window ends at: %s\n", c.windowEnd.Format("15:04:05"))
 	}
 	score := float64(event.Timestamp.Unix())
 	member := event.MMSI + ":" + strconv.FormatInt(event.Timestamp.Unix(), 10)
@@ -124,12 +124,12 @@ func (c *Coordinator) triggerWorker(ctx context.Context, windowStart time.Time, 
 		Max: maxScore,
 	}).Result()
 
-	fmt.Printf("Window from %s to %s closed with %d events\n",
+	log.Printf("Window from %s to %s closed with %d events\n",
 		windowStart.Format("15:04:05"),
 		windowEnd.Format("15:04:05"),
 		len(results))
 
 	// Window data would be deleted from Redis, when worker finishes
 	//c.redisClient.ZRemRangeByScore(ctx, "mod-stream", minScore, maxScore)
-	//fmt.Println("Window data deleted from Redis")
+	//log.Printf("Window data deleted from Redis")
 }

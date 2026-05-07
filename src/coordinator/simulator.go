@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
-	"fmt"
+	"log"
 	"os"
 	"time"
 
@@ -29,7 +29,7 @@ func NewSimulator(topic *pubsub.Topic, csvPath string) *Simulator {
 func (s *Simulator) Run(ctx context.Context) {
 	file, err := os.Open(s.csvPath)
 	if err != nil {
-		fmt.Printf("Failed to open CSV file: %v\n", err)
+		log.Printf("[SIMULATOR] Failed to open CSV file: %v\n", err)
 		return
 	}
 	defer file.Close()
@@ -39,7 +39,7 @@ func (s *Simulator) Run(ctx context.Context) {
 	// Extract header with column names
 	headers, err := reader.Read()
 	if err != nil {
-		fmt.Printf("Failed to read CSV header: %v\n", err)
+		log.Printf("[Sim] Failed to read CSV header: %v\n", err)
 		return
 	}
 
@@ -61,7 +61,7 @@ func (s *Simulator) Run(ctx context.Context) {
 		allRows = append(allRows, record)
 	}
 
-	fmt.Printf("Read %d rows from CSV\n", len(allRows))
+	log.Printf("[Sim] Read %d rows from CSV\n", len(allRows))
 
 	// Publish each event to Pub/Sub
 	for i := 0; i < len(allRows); i++ {
@@ -76,5 +76,5 @@ func (s *Simulator) Run(ctx context.Context) {
 		time.Sleep(1 * time.Millisecond)
 	}
 
-	fmt.Println("Finished publishing all events")
+	log.Printf("[Sim] Finished publishing all events")
 }
