@@ -11,8 +11,7 @@ import (
 	"cloud.google.com/go/pubsub"
 )
 
-// Simulator reads events from a CSV file and published them
-// to a Pub/sub topic
+// Simulator reads events from a CSV file and published them to a Pub/sub topic, used for local testing
 type Simulator struct {
 	topic   *pubsub.Topic
 	csvPath string

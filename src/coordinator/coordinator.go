@@ -87,13 +87,14 @@ func (c *Coordinator) parseEventFromMap(data map[string]string) *AISEvent {
 	return event
 }
 
+// TODO: Should store whole row, not only MMSI:Timestamp
 // Store event in Redis sorted set, where score is timestamp and member is MMSI:Timestamp
 // Sort by score
 func (c *Coordinator) handleEvent(ctx context.Context, event *AISEvent) {
 	if c.initialized == false {
 		c.windowEnd = event.Timestamp.Add(c.windowSize)
 		c.initialized = true
-		log.Printf("First window ends at: %s\n", c.windowEnd.Format("15:04:05"))
+		log.Printf("[Coordinator] First window ends at: %s\n", c.windowEnd.Format("15:04:05"))
 	}
 	score := float64(event.Timestamp.Unix())
 	member := event.MMSI + ":" + strconv.FormatInt(event.Timestamp.Unix(), 10)
@@ -124,7 +125,7 @@ func (c *Coordinator) triggerWorker(ctx context.Context, windowStart time.Time, 
 		Max: maxScore,
 	}).Result()
 
-	log.Printf("Window from %s to %s closed with %d events\n",
+	log.Printf("[Coordinator] Window from %s to %s closed with %d events\n",
 		windowStart.Format("15:04:05"),
 		windowEnd.Format("15:04:05"),
 		len(results))
