@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"log"
 
 	"cloud.google.com/go/pubsub"
 )
@@ -15,23 +15,39 @@ const (
 
 // Pub/Sub returns the client, topic and subscription used to simulate local pub/sub broker
 func setupPubSub(ctx context.Context) (*pubsub.Client, *pubsub.Topic, *pubsub.Subscription) {
-	client, _ := pubsub.NewClient(ctx, projectID)
+	client, err := pubsub.NewClient(ctx, projectID)
+	if err != nil {
+		log.Fatalf("[PubSub] Failed to create Pub/Sub client: %v", err)
+	}
 
 	topic := client.Topic(topicID)
-	topicExists, _ := topic.Exists(ctx)
+	topicExists, err := topic.Exists(ctx)
+	if err != nil {
+		log.Fatalf("[PubSub] Failed to check if topic exists: %v", err)
+	}
 	if topicExists == false {
-		topic, _ = client.CreateTopic(ctx, topicID)
+		topic, err = client.CreateTopic(ctx, topicID)
+		if err != nil {
+			log.Fatalf("[PubSub] Failed to create topic: %v", err)
+		}
+	} else {
+		log.Printf("[PubSub] Topic already exists: %s", topicID)
 	}
 
 	subscription := client.Subscription(subscriptionID)
-	subscriptionExists, _ := subscription.Exists(ctx)
+	subscriptionExists, err := subscription.Exists(ctx)
+	if err != nil {
+		log.Fatalf("[PubSub] Failed to check if subscription exists: %v", err)
+	}
 	if subscriptionExists == false {
-		subscription, _ = client.CreateSubscription(ctx, subscriptionID, pubsub.SubscriptionConfig{
+		subscription, err = client.CreateSubscription(ctx, subscriptionID, pubsub.SubscriptionConfig{
 			Topic: topic,
 		})
-		fmt.Println("Subscription created")
+		if err != nil {
+			log.Fatalf("[PubSub] Failed to create subscription: %v", err)
+		}
 	} else {
-		fmt.Println("Subscription already exists")
+		log.Println("[PubSub] Subscription already exists")
 	}
 
 	return client, topic, subscription
