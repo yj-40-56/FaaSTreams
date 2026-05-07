@@ -1,0 +1,47 @@
+services:
+  pubsub:
+    image: google/cloud-sdk:emulators
+    command: gcloud beta emulators pubsub start --host-port=0.0.0.0:8085
+    ports:
+      - "8085:8085"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  coordinator:
+    build:
+      context: ..
+      dockerfile: src/coordinator/Dockerfile
+    depends_on:
+      redis:
+        condition: service_healthy
+      pubsub:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      PUBSUB_EMULATOR_HOST: pubsub:8085
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    volumes:
+      - ../data:/app/data:ro
+      - coordinator-go-cache:/go/pkg/mod
+    restart: on-failure
+
+  redis:
+    image: redis:latest
+    command: redis-server --save "" --appendonly no
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+
+volumes:
+  coordinator-go-cache:
+

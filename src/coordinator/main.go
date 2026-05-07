@@ -11,10 +11,12 @@ import (
 func main() {
 	ctx := context.Background()
 
-	os.Setenv("PUBSUB_EMULATOR_HOST", "localhost:8085")
+	redisHost := os.Getenv("REDIS_HOST")
+	redisPort := os.Getenv("REDIS_PORT")
+	redisAddr := redisHost + ":" + redisPort
 
 	redisClient := redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
+		Addr: redisAddr,
 	})
 
 	_, err := redisClient.Ping(ctx).Result()
@@ -29,7 +31,7 @@ func main() {
 	defer pubsubClient.Close()
 
 	// Simulator uses csv as source
-	simulator := NewSimulator(topic, "../../data/ais.csv")
+	simulator := NewSimulator(topic, "/app/data/ais.csv")
 	go simulator.Run(ctx)
 
 	windowSizeInSeconds := 60
