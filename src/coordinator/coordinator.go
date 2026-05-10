@@ -11,12 +11,9 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-type AISEvent struct {
-	MMSI      string
+type Event struct {
 	Timestamp time.Time
-	Latitude  float64
-	Longitude float64
-	SOG       float64
+	Raw       map[string]string
 }
 
 // TODO: Currently only supports tumbling windows, later infos like windowSize should be set by Query Config
@@ -53,57 +50,39 @@ func (c *Coordinator) Run(ctx context.Context, subscription *pubsub.Subscription
 		}
 
 		event := c.parseEventFromMap(data)
-		c.handleEvent(ctx, event)
+		c.handleEvent(ctx, event, msg.Data)
 
 		msg.Ack()
 	})
 }
 
 // Write sub data into Event struct
-func (c *Coordinator) parseEventFromMap(data map[string]string) *AISEvent {
-	timestampString := data["# Timestamp"]
-	timestamp, err := time.Parse("02/01/2006 15:04:05", timestampString)
+func (c *Coordinator) parseEventFromMap(data map[string]string) *Event {
+	timestamp, err := time.Parse("02/01/2006 15:04:05", data["# Timestamp"])
 	if err != nil {
 		return nil
 	}
 
-	latitudeString := data["Latitude"]
-	latitude, err := strconv.ParseFloat(latitudeString, 64)
-
-	longitudeString := data["Longitude"]
-	longitude, err := strconv.ParseFloat(longitudeString, 64)
-
-	sogString := data["SOG"]
-	sog, _ := strconv.ParseFloat(sogString, 64)
-
-	event := &AISEvent{
-		MMSI:      data["MMSI"],
+	return &Event{
 		Timestamp: timestamp,
-		Latitude:  latitude,
-		Longitude: longitude,
-		SOG:       sog,
+		Raw:       data,
 	}
-
-	return event
 }
 
-// TODO: Should store whole row, not only MMSI:Timestamp
-// Store event in Redis sorted set, where score is timestamp and member is MMSI:Timestamp
-// Sort by score
-func (c *Coordinator) handleEvent(ctx context.Context, event *AISEvent) {
+// Store event in Redis sorted set, where score is timestamp and member is JSON data, sorted by score
+func (c *Coordinator) handleEvent(ctx context.Context, event *Event, rawData []byte) {
 	if c.initialized == false {
 		c.windowEnd = event.Timestamp.Add(c.windowSize)
 		c.initialized = true
 		log.Printf("[Coordinator] First window ends at: %s\n", c.windowEnd.Format("15:04:05"))
 	}
-	score := float64(event.Timestamp.Unix())
-	member := event.MMSI + ":" + strconv.FormatInt(event.Timestamp.Unix(), 10)
 
-	// Score is unix timestamp, basically key
-	// Member is MMSI:Timestamp, MMSI is id of ship
+	score := float64(event.Timestamp.Unix())
+
+	// Store raw JSON directly in Redis
 	c.redisClient.ZAdd(ctx, "mod-stream", redis.Z{
 		Score:  score,
-		Member: member,
+		Member: string(rawData),
 	})
 
 	// Start worker for previous window

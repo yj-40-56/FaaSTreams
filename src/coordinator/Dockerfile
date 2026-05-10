@@ -3,15 +3,15 @@ FROM golang:1.26-alpine
 
 RUN apk add --no-cache \
     ca-certificates \
-    git \
+    git
 
 WORKDIR /app
 
-COPY go.mod go.sum ./
+COPY src/coordinator/go.mod src/coordinator/go.sum ./
 
 RUN go mod download
 
-COPY src/coordinator/ ./
+COPY src/coordinator/*.go ./
 
 EXPOSE 8000
 ENV PUBSUB_EMULATOR_HOST=pubsub:8085
