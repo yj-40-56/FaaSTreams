@@ -11,7 +11,7 @@ COPY src/coordinator/go.mod src/coordinator/go.sum ./
 
 RUN go mod download
 
-COPY src/coordinator/*.go ./
+COPY src/coordinator/ ./
 
 EXPOSE 8000
 ENV PUBSUB_EMULATOR_HOST=pubsub:8085

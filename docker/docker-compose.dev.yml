@@ -25,6 +25,7 @@ services:
       PUBSUB_EMULATOR_HOST: pubsub:8085
       REDIS_HOST: redis
       REDIS_PORT: "6379"
+      CONFIG_PATH: "/app/config/test.yaml"
     volumes:
       - ../data:/app/data:ro
       - coordinator-go-cache:/go/pkg/mod

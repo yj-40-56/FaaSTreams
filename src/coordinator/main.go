@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"coordinator/config"
 	"log"
 	"os"
 
@@ -30,11 +31,15 @@ func main() {
 	}
 	defer pubsubClient.Close()
 
+	configPath := os.Getenv("CONFIG_PATH")
+	queryConfig := config.LoadConfig(configPath)
+	// TODO: For testing purposes we just select the first query config add support for several later
+	selectedQuery := queryConfig.Queries[0]
+
 	// Simulator uses csv as source
 	simulator := NewSimulator(topic, "/app/data/ais.csv")
 	go simulator.Run(ctx)
 
-	windowSizeInSeconds := 60
-	coordinator := NewCoordinator(redisClient, windowSizeInSeconds)
+	coordinator := NewCoordinator(redisClient, selectedQuery)
 	coordinator.Run(ctx, subscription)
 }

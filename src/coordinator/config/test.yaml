@@ -1,0 +1,9 @@
+queries:
+  - name: test_analytics
+    window_type: tumbling
+    window_size: 60
+    sql:
+      - name: test
+        query: "SELECT count(DISTINCT MMSI) 
+            FROM read_csv_auto('{csv_path}')
+            WHERE Latitude > 50.0 AND Longitude > 10.0 AND Navigational Status = 'Under way using engine'"
