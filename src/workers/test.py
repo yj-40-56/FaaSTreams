@@ -58,66 +58,85 @@ def duckdb_ais_test(request):
 
 @functions_framework.http
 def ais_redis_test(request):
+    request_json = request.get_json(silent=True)
+    if request_json is None:
+        request_json = {}
+    start_idx = request_json.get('start', 0)
+    end_idx = request_json.get('end', 100)
+    analysis_type = "basic"
+    if request_json and 'type' in request_json:
+        analysis_type = request_json['type']
+
     connection = duckdb.connect()
     try:
-        # 1. Fetch total count and data from Redis
-        total_records = int(r.get("ais:total") or 0)
-        
         ais_data = []
-        for i in range(min(total_records, 1000)):
+        for i in range(start_idx, end_idx):
             record = r.hgetall(f"ais:{i}")
             if record:
                 ais_data.append(record)
 
         if not ais_data:
-            return {"status": "error", "message": "No data found in Redis"}, 404
+            return {"status": "error", "message": "No data found for this window"}, 404 
 
         df = pd.DataFrame(ais_data)
         connection.execute("INSTALL spatial; LOAD spatial")
-        
 
-        # basic
-        basic_query = """
+        if analysis_type == "basic":        
+            basic_query = """
             SELECT count(DISTINCT mmsi) 
             FROM df
             """
-        basic_count = connection.execute(basic_query).fetchone()[0]
+            result = connection.execute(basic_query).fetchone()[0]
         
 
         # spatial
-        spatial_query = """
-            SELECT count(DISTINCT mmsi) 
-            FROM df
-            WHERE CAST(latitude AS FLOAT) > 50.0 
-              AND CAST(longitude AS FLOAT) > 10.0 
-              AND navigationalStatus = 'Under way using engine'
-        """
-        ships_in_zone = connection.execute(spatial_query).fetchone()[0]
+        elif analysis_type == "spatial":   
+            spatial_query = """
+                SELECT count(DISTINCT mmsi) 
+                FROM df
+                WHERE CAST(latitude AS FLOAT) > 50.0 
+                AND CAST(longitude AS FLOAT) > 10.0 
+                AND navigationalStatus = 'Under way using engine'
+            """
+            result = connection.execute(spatial_query).fetchone()[0]
 
         # temporal
-        temporal_query = """
-            WITH parsed AS (
-                SELECT mmsi, strptime(timestamp, '%d/%m/%Y %H:%M:%S') as dt FROM df
-            )
-            SELECT 
-                mmsi, 
-                min(dt) as first_seen, 
-                max(dt) as last_seen
-            FROM parsed
-            GROUP BY mmsi
-        """
-        first_last_seen = connection.execute(temporal_query).df().to_dict(orient='records')
+        elif analysis_type == "temporal":   
+            temporal_query = """
+                WITH parsed AS (
+                    SELECT mmsi, strptime(timestamp, '%d/%m/%Y %H:%M:%S') as dt FROM df
+                )
+                SELECT 
+                    mmsi, 
+                    min(dt) as first_seen, 
+                    max(dt) as last_seen
+                FROM parsed
+                GROUP BY mmsi
+            """
+            result = connection.execute(temporal_query).df().to_dict(orient='records')
+        else:
+            return {"status": "error", "message": f"Unknown analysis type: {analysis_type}"}, 400
 
         return {
             "status": "success",
             "source": "Redis",
             "records_processed": len(ais_data),
-            "ships_in_area": ships_in_zone,
-            "ship_first_last_seen": first_last_seen,
-            "basic_count": basic_count
+            "analysis_executed": analysis_type,
+            "data": result
         }, 200
 
     except Exception as e:
         return {"status": "error", "message": str(e)}, 500
     finally:
         connection.close()
+
+'''
+how to run locally:
+1. Docker Desktop running with Redis container and imported AIS data
+2. Start worker using: `functions-framework --target=ais_redis_test`
+    - This will start the HTTP server on port 8080 by default.
+3. In second terminal run (for example, testing spatial analysis on first 50 records):
+    curl.exe -X POST http://localhost:8080 `
+     -H "Content-Type: application/json" `
+     -d '{\"type\": \"spatial\", \"start\": 0, \"end\": 50}'
+'''
