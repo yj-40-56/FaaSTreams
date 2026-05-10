@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"time"
 
+	"coordinator/config"
+
 	"cloud.google.com/go/pubsub"
 	"github.com/redis/go-redis/v9"
 )
@@ -16,22 +18,22 @@ type Event struct {
 	Raw       map[string]string
 }
 
-// TODO: Currently only supports tumbling windows, later infos like windowSize should be set by Query Config
+// TODO: Currently only supports tumbling windows, add support for other window types
 // Coordinator listens to Pub/Sub messages, extracts event data and stores it in Redis sorted set
 type Coordinator struct {
 	redisClient *redis.Client
 	windowSize  time.Duration
 	windowEnd   time.Time
-	initialized bool
+	queryConfig config.QueryConfig
 }
 
-func NewCoordinator(redisClient *redis.Client, windowSizeInSeconds int) *Coordinator {
-	windowSize := time.Duration(windowSizeInSeconds) * time.Second
+func NewCoordinator(redisClient *redis.Client, queryConfig config.QueryConfig) *Coordinator {
+	windowSize := time.Duration(queryConfig.WindowSizeInSeconds) * time.Second
 
 	coordinator := &Coordinator{
 		redisClient: redisClient,
 		windowSize:  windowSize,
-		initialized: false,
+		queryConfig: queryConfig,
 	}
 
 	return coordinator
@@ -71,9 +73,8 @@ func (c *Coordinator) parseEventFromMap(data map[string]string) *Event {
 
 // Store event in Redis sorted set, where score is timestamp and member is JSON data, sorted by score
 func (c *Coordinator) handleEvent(ctx context.Context, event *Event, rawData []byte) {
-	if c.initialized == false {
+	if c.windowEnd.IsZero() {
 		c.windowEnd = event.Timestamp.Add(c.windowSize)
-		c.initialized = true
 		log.Printf("[Coordinator] First window ends at: %s\n", c.windowEnd.Format("15:04:05"))
 	}
 
@@ -93,23 +94,16 @@ func (c *Coordinator) handleEvent(ctx context.Context, event *Event, rawData []b
 	}
 }
 
-// TODO: Pass this logic to worker, Coordinator should just trigger the worker
+// TODO: Pass window_start, window_end, query
 func (c *Coordinator) triggerWorker(ctx context.Context, windowStart time.Time, windowEnd time.Time) {
 	minScore := strconv.FormatInt(windowStart.Unix(), 10)
 	maxScore := strconv.FormatInt(windowEnd.Unix(), 10)
 
-	// Retrieve results for the window
-	results, _ := c.redisClient.ZRangeByScore(ctx, "mod-stream", &redis.ZRangeBy{
-		Min: minScore,
-		Max: maxScore,
-	}).Result()
+	log.Printf("[Coordinator] Triggering worker for window (scores): %s - %s\n", minScore, maxScore)
 
-	log.Printf("[Coordinator] Window from %s to %s closed with %d events\n",
-		windowStart.Format("15:04:05"),
-		windowEnd.Format("15:04:05"),
-		len(results))
-
-	// Window data would be deleted from Redis, when worker finishes
-	//c.redisClient.ZRemRangeByScore(ctx, "mod-stream", minScore, maxScore)
-	//log.Printf("Window data deleted from Redis")
+	for i := 0; i < len(c.queryConfig.SQLQueries); i++ {
+		query := c.queryConfig.SQLQueries[i]
+		log.Printf("[Coordnator] Triggering worker for query: %s\n", query.Name)
+		//TODO: spawn worker
+	}
 }
