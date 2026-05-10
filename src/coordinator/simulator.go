@@ -42,10 +42,7 @@ func (s *Simulator) Run(ctx context.Context) {
 		return
 	}
 
-	// Create slice of all rows, where row has columns as key and values as value
-	var allRows []map[string]string
-
-	// Append each row into slice
+	// Read and publish each row line by line
 	for {
 		row, err := reader.Read()
 		if err != nil {
@@ -57,14 +54,7 @@ func (s *Simulator) Run(ctx context.Context) {
 			record[headers[i]] = row[i]
 		}
 
-		allRows = append(allRows, record)
-	}
-
-	log.Printf("[Sim] Read %d rows from CSV\n", len(allRows))
-
-	// Publish each event to Pub/Sub
-	for i := 0; i < len(allRows); i++ {
-		messageBytes, err := json.Marshal(allRows[i])
+		messageBytes, err := json.Marshal(record)
 		if err != nil {
 			continue
 		}
@@ -74,6 +64,5 @@ func (s *Simulator) Run(ctx context.Context) {
 		})
 		time.Sleep(1 * time.Millisecond)
 	}
-
 	log.Printf("[Sim] Finished publishing all events")
 }
