@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	"cloud.google.com/go/pubsub"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -33,13 +34,14 @@ func main() {
 
 	configPath := os.Getenv("CONFIG_PATH")
 	queryConfig := config.LoadConfig(configPath)
-	// TODO: For testing purposes we just select the first query config add support for several later
-	selectedQuery := queryConfig.Queries[0]
 
 	// Simulator uses csv as source
 	simulator := NewSimulator(topic, "/app/data/ais.csv")
 	go simulator.Run(ctx)
 
-	coordinator := NewCoordinator(redisClient, selectedQuery)
-	coordinator.Run(ctx, subscription)
+	// TODO: For testing purposes we just select the first query config, add support for several later
+	coordinator := NewCoordinator(redisClient, queryConfig.Queries[0])
+	subscription.Receive(ctx, func(ctx context.Context, msg *pubsub.Message) {
+		coordinator.Run(ctx, msg)
+	})
 }
