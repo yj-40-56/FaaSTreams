@@ -33,6 +33,7 @@ func NewCoordinator(redisClient *redis.Client, queryConfig config.QueryConfig) *
 
 // Run is invoked by GCP when a Pub/Sub message arrives
 func (c *Coordinator) Run(ctx context.Context, msg *pubsub.Message) error {
+	log.Printf("[Coordinator] Received event")
 	var raw map[string]string
 	if err := json.Unmarshal(msg.Data, &raw); err != nil {
 		msg.Ack()
