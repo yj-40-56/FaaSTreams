@@ -34,6 +34,9 @@ pip install -r src/worker/requirements.txt
 # run tests
 cd src
 python -m pytest tests/ -v
+
+##run tests and get results of queries:
+python -m pytest tests/ -v -s
 ```
 
 ### Starting the Mock Infrastructure
