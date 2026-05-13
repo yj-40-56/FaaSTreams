@@ -21,7 +21,20 @@ To enable this worker development, a Docker Compose stack is used to run a Redis
 | Service        | Role                                                                                                                                                                                                                                                  |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `redis`        | Redis server with persistence disabled (`--save "" --appendonly no`) for in-memory-only, fast access. Exposes port `6379`.                                                                                                                            |
-| `redis-import` | Custom Python image (`docker/import/Dockerfile`) that reads `data/ais.csv` and imports each row as a hash under the key `ais:<index>` (e.g. `ais:0`, `ais:1`, …). Also sets `ais:total` to the total number of imported records. Runs once and exits. |
+| `redis-import` | Custom Python image (`docker/import/Dockerfile`) that reads `data/ais.csv` and imports each row as a hash under the key `ais:<index>` (e.g. `ais:0`, `ais:1`, …). Also sets `ais:total` to the total number of imported 
+records. Runs once and exits. |
+
+### Get Started with Local DuckDb 
+```bash
+# from FaaSTreams/
+python3 -m venv venv
+source venv/bin/activate
+pip install -r src/worker/requirements.txt
+
+# run tests
+cd src
+python -m pytest tests/ -v
+```
 
 ### Starting the Mock Infrastructure
 

@@ -1,0 +1,5 @@
+duckdb>=0.10.0
+pandas>=2.0
+pydantic>=2.0
+functions-framework>=3.0
+pytest>=8.0

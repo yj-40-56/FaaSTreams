@@ -3,11 +3,14 @@ __pycache__/
 *.pyc
 bin/
 dist/
+*.pyo
+.pytest_cache/
 
 # Local Environment / Secrets
 .env
 auth.json
 *.pem
+venv/
 
 # IDEs
 .vscode/
@@ -16,3 +19,11 @@ auth.json
 # Database files
 *.db
 *.duckdb
+
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
