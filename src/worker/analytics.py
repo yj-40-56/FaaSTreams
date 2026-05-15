@@ -1,5 +1,5 @@
 import duckdb
-
+import pandas as pd
 from zones import HAZARD_ZONES
 
 METERS_PER_NM = 1852.0
@@ -9,38 +9,58 @@ def run(records: list[dict]) -> list[dict]:
     if not records:
         return []
 
+    df = pd.DataFrame(records)
+    df["timestamp_parsed"] = pd.to_datetime(df["# Timestamp"], format='%d/%m/%Y %H:%M:%S').dt.strftime('%Y-%m-%d %H:%M:%S')
+    numeric_cols = ['Latitude', 'Longitude', 'SOG']
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
     conn = duckdb.connect()
     conn.execute("INSTALL spatial")
     conn.execute("LOAD spatial")
 
-    conn.execute("""
-        CREATE TABLE vessels (
-            mmsi        VARCHAR,
-            name        VARCHAR,
-            latitude    DOUBLE,
-            longitude   DOUBLE,
-            sog         DOUBLE,
-            timestamp   VARCHAR,
-            navigationalStatus VARCHAR
-        )
-    """)
+    # conn.execute("""
+    #     CREATE TABLE vessels (
+    #         mmsi        VARCHAR,
+    #         name        VARCHAR,
+    #         latitude    DOUBLE,
+    #         longitude   DOUBLE,
+    #         sog         DOUBLE,
+    #         timestamp   VARCHAR,
+    #         navigationalStatus VARCHAR
+    #     )
+    # """)
 
-    conn.executemany(
-        "INSERT INTO vessels VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [
-            (
-                r.get("mmsi", ""),
-                r.get("name", ""),
-                float(r["latitude"]) if r.get("latitude") else None,
-                float(r["longitude"]) if r.get("longitude") else None,
-                float(r["sog"]) if r.get("sog") else None,
-                r.get("timestamp", ""),
-                r.get("navigationalStatus", ""),
-            )
-            for r in records
-            if r.get("latitude") and r.get("longitude")
-        ],
-    )
+    # conn.executemany(
+    #     "INSERT INTO vessels VALUES (?, ?, ?, ?, ?, ?, ?)",
+    #     [
+    #         (
+    #             r.get("mmsi", ""),
+    #             r.get("name", ""),
+    #             float(r["latitude"]) if r.get("latitude") else None,
+    #             float(r["longitude"]) if r.get("longitude") else None,
+    #             float(r["sog"]) if r.get("sog") else None,
+    #             r.get("timestamp", ""),
+    #             r.get("navigationalStatus", ""),
+    #         )
+    #         for r in records
+    #         if r.get("latitude") and r.get("longitude")
+    #     ],
+    # )
+
+    conn.execute("""
+        CREATE TABLE vessels AS 
+        SELECT 
+            CAST(MMSI AS VARCHAR) as mmsi,
+            CAST(Name AS VARCHAR) as name,
+            CAST(Latitude AS DOUBLE) as latitude,
+            CAST(Longitude AS DOUBLE) as longitude,
+            CAST(SOG AS DOUBLE) as sog,
+            CAST(timestamp_parsed AS VARCHAR) as timestamp,
+            CAST("Navigational status" AS VARCHAR) as navigationalStatus
+        FROM df
+        WHERE Latitude IS NOT NULL AND Longitude IS NOT NULL
+    """)
 
     conn.execute("""
         CREATE TABLE zones (

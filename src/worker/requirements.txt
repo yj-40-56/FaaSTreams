@@ -1,2 +1,4 @@
 duckdb
 redis
+functions-framework
+pandas

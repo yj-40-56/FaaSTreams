@@ -3,14 +3,18 @@ import sys
 
 import analytics
 import fetch
+import functions_framework
 
+@functions_framework.http
+def handler(request):
+    request_json = request.get_json(silent=True)
 
-def handler(event: dict, context) -> dict:
-    start_index = int(event["start_index"])
-    end_index = int(event["end_index"])
-
-    print(f"Fetching records {start_index}–{end_index} from Redis...")
-    records = fetch.fetch_range(start_index, end_index)
+    if request_json and "start_timestamp" in request_json:
+        start = int(request_json["start_timestamp"])
+        end = int(request_json["end_timestamp"])
+        records = fetch.fetch_by_timestamp(start, end)
+    else:
+        return {"error": "Invalid input, Timestamps expected"}, 400
     print(f"Loaded {len(records)} records.")
 
     warnings = analytics.run(records)
@@ -26,9 +30,8 @@ def handler(event: dict, context) -> dict:
     else:
         print("No proximity warnings.")
 
-    return {"warnings": warnings, "records_processed": len(records)}
+    return {"status": "success", "warnings": warnings, "records_processed": len(records)}, 200
 
-
-if __name__ == "__main__":
-    event = json.loads(sys.argv[1])
-    handler(event, None)
+# if __name__ == "__main__":
+#     event = json.loads(sys.argv[1])
+#     handler(event, None)
