@@ -8,7 +8,7 @@ In the final production architecture, live data will be pushed from external sou
 
 ---
 
-## Phase 1: Worker Development Setup
+## Phase 1.1: Worker Development Setup
 
 Currently, this repository contains the foundational infrastructure needed to begin developing the **worker side** of the application.
 
@@ -90,3 +90,40 @@ Each `ais:<index>` hash contains the following fields, representing the payload 
 | `dataSourceType`         | AIS message source                   |
 | `rot`                    | Rate of turn                         |
 | `a` / `b` / `c` / `d`    | Antenna offset dimensions            |
+
+---
+
+## Phase 1.2: Coordinator Development
+
+XYZ Coordinator
+
+---
+
+## Phase 2: Pipeline Local Integration
+
+### Overview
+The Go-based Coordinator manages temporal windows and triggers Python workers to perform the spatial calculations using DuckDB.
+Currently trying to get it to run locally
+
+### Workflow
+1. Pings are pushed to Redis with Timestamps
+2. Coordinator calculates 60-second Tumblin Windows
+3. Coordinator triggers a POST request to a worker with following schema:
+```JSON
+{
+  "start_timestamp": 1777161600,
+  "end_timestamp": 1777161660,
+  "query_name": "proximity_alert"
+}
+```
+4. Worker fetches records from Redis, cleans columns and runs spatial cross-join in DuckDB against hazard zones (specific query type)
+5. Worker returns a JSON list of instances where vessels are currently violating distance safety thresholds
+
+### Testing the architecture:
+```bash
+docker compose -f docker-compose.integration.yml up
+```
+---
+
+## Phase 3: Cloud Implementation
+### #TODO

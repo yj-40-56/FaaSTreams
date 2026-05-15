@@ -1,0 +1,54 @@
+services:
+  redis:
+    image: redis:latest
+    command: redis-server --save "" --appendonly no
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  pubsub:
+    image: google/cloud-sdk:emulators
+    command: gcloud beta emulators pubsub start --host-port=0.0.0.0:8085
+    ports:
+      - "8085:8085"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  worker:
+    build: ./src/worker
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redis
+
+  coordinator:
+      build:
+        context: ./src/coordinator
+        dockerfile: Dockerfile.Integration
+      environment:
+        PUBSUB_EMULATOR_HOST: pubsub:8085
+        REDIS_HOST: redis
+        REDIS_PORT: "6379"
+        CONFIG_PATH: "/app/config/test.yaml"
+        WORKER_URL: http://worker:8080
+      volumes:
+        - ./data:/app/data:ro
+        - ./src/coordinator/config:/app/config:ro
+      depends_on:
+        redis:
+          condition: service_healthy
+        pubsub:
+          condition: service_healthy
+        worker:
+          condition: service_started
+      restart: on-failure
