@@ -1,4 +1,21 @@
 services:
+  simulator:
+    build:
+      context: ..
+      dockerfile: src/simulator/Dockerfile
+    depends_on:
+      pubsub:
+        condition: service_healthy
+      coordinator:
+        condition: service_started
+    environment:
+      PUBSUB_EMULATOR_HOST: pubsub:8085
+      PUBSUB_PROJECT_ID: local-project
+      PUBSUB_TOPIC_ID: ais-stream
+      CSV_PATH: /app/data/ais.csv
+    volumes:
+      - ../data:/app/data:ro
+
   pubsub:
     image: google/cloud-sdk:emulators
     command: gcloud beta emulators pubsub start --host-port=0.0.0.0:8085
@@ -6,7 +23,7 @@ services:
       - "8085:8085"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8085"]
-      interval: 5s
+      interval: 60s
       timeout: 3s
       retries: 10
 

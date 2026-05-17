@@ -16,3 +16,8 @@ def fetch_window(window_start: int, window_end: int) -> list[dict]:
         records.append(record)
     
     return records
+
+def delete_window(window_start: int, window_end: int) -> None:
+    r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    r.zremrangebyscore("mod-stream", window_start, window_end)
+    print(f"Deleted window {window_start} - {window_end} from Redis", flush=True)

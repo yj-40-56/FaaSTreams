@@ -4,9 +4,11 @@ from zones import HAZARD_ZONES
 
 METERS_PER_NM = 1852.0
 
-
+# TODO: Use query sent by coordinator instead of hardcoding
 def run(records: list[dict]) -> list[dict]:
-    if not records:
+    valid_records = [r for r in records if r.get("Latitude") and r.get("Longitude")]
+    if not valid_records:
+        print("No valid records with coordinates", flush=True)
         return []
 
     conn = duckdb.connect()
@@ -29,16 +31,16 @@ def run(records: list[dict]) -> list[dict]:
         "INSERT INTO vessels VALUES (?, ?, ?, ?, ?, ?, ?)",
         [
             (
-                r.get("mmsi", ""),
-                r.get("name", ""),
-                float(r["latitude"]) if r.get("latitude") else None,
-                float(r["longitude"]) if r.get("longitude") else None,
-                float(r["sog"]) if r.get("sog") else None,
-                r.get("timestamp", ""),
-                r.get("navigationalStatus", ""),
+                r.get("MMSI", ""),
+                r.get("Name", ""),
+                float(r["Latitude"]) if r.get("Latitude") else None,
+                float(r["Longitude"]) if r.get("Longitude") else None,
+                float(r["SOG"]) if r.get("SOG") else None,
+                r.get("# Timestamp", ""),
+                r.get("Navigational status", ""),
             )
             for r in records
-            if r.get("latitude") and r.get("longitude")
+            if r.get("Latitude") and r.get("Longitude")
         ],
     )
 
