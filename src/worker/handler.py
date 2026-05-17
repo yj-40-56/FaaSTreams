@@ -1,13 +1,20 @@
 import json
 import sys
 
+import functions_framework
+
 import analytics
 import fetch
 
 
-def handler(event: dict, context) -> dict:
-    start_index = int(event["start_index"])
-    end_index = int(event["end_index"])
+@functions_framework.http
+def handler(request):
+    body = request.get_json(silent=True) or {}
+    try:
+        start_index = int(body["start_index"])
+        end_index = int(body["end_index"])
+    except (KeyError, TypeError, ValueError) as e:
+        return {"error": f"Invalid payload: {e}"}, 400
 
     print(f"Fetching records {start_index}–{end_index} from Redis...")
     records = fetch.fetch_range(start_index, end_index)
@@ -30,5 +37,12 @@ def handler(event: dict, context) -> dict:
 
 
 if __name__ == "__main__":
-    event = json.loads(sys.argv[1])
-    handler(event, None)
+    import flask
+    app = flask.Flask(__name__)
+    with app.test_request_context(
+        method="POST",
+        json=json.loads(sys.argv[1]),
+        content_type="application/json",
+    ):
+        result = handler(flask.request)
+    print(json.dumps(result if isinstance(result, dict) else result[0], indent=2))
