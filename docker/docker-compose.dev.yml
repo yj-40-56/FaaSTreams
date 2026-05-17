@@ -23,6 +23,7 @@ services:
       - "8000:8000"
     environment:
       PUBSUB_EMULATOR_HOST: pubsub:8085
+      WORKER_URL: http://worker:8080
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       CONFIG_PATH: "/app/config/test.yaml"
@@ -41,6 +42,19 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  worker:
+    build:
+      context: ..
+      dockerfile: src/worker/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    depends_on:
+      redis:
+        condition: service_healthy
 
 
 volumes:

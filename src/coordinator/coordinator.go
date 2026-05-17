@@ -6,6 +6,9 @@ import (
 	"log"
 	"strconv"
 	"time"
+	"net/http"
+	"bytes"
+	"os"
 
 	"coordinator/config"
 
@@ -100,10 +103,30 @@ func (c *Coordinator) triggerWorker(ctx context.Context, windowStart time.Time, 
 	maxScore := strconv.FormatInt(windowEnd.Unix(), 10)
 
 	log.Printf("[Coordinator] Triggering worker for window (scores): %s - %s\n", minScore, maxScore)
+	workerURL := os.Getenv("WORKER_URL")
 
 	for i := 0; i < len(c.queryConfig.SQLQueries); i++ {
 		query := c.queryConfig.SQLQueries[i]
 		log.Printf("[Coordnator] Triggering worker for query: %s\n", query.Name)
 		//TODO: spawn worker
+		payload := map[string]interface{}{
+			"window_start": windowStart.Unix(),
+			"window_end":   windowEnd.Unix(),
+			"query":        query.Query,
+		}
+
+		payloadBytes, _ := json.Marshal(payload)
+
+		go func() {
+			resp, err := http.Post(workerURL, "application/json", bytes.NewBuffer(payloadBytes))
+			if err != nil {
+				log.Printf("[Coordinator] Failed to spawn worker for query %s: %v\n", query.Name, err)
+				return
+			}
+			defer resp.Body.Close()
+			log.Printf("[Coordinator] Worker spawned for query: %s\n", query.Name)
+		}()
 	}
+
+	c.redisClient.ZRemRangeByScore(ctx, "mod-stream", minScore, maxScore)
 }
