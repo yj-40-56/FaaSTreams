@@ -1,7 +1,7 @@
 queries:
   - name: test_analytics
     window_type: tumbling
-    window_size: 60
+    window_size: 10
     sql:
       - name: test
         query: "SELECT count(DISTINCT MMSI) 
