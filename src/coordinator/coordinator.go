@@ -9,7 +9,6 @@ import (
 	"os"
 	"bytes"
 	"net/http"
-	"io"
 
 	"coordinator/config"
 
@@ -133,7 +132,6 @@ func (c *Coordinator) triggerWorker(ctx context.Context, windowStart time.Time, 
 			log.Printf("Error: %v", err)
 			return
 		}
-		resBody, _ := io.ReadAll(resp.Body)
-		log.Printf("[Coordinator] Worker response: %s", resp.Status, string(resBody))
+		log.Printf("[Coordinator] Worker response: %s", resp.Status)
 	}
 }
