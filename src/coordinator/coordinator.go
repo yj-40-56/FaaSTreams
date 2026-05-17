@@ -44,41 +44,22 @@ func NewCoordinator(redisClient *redis.Client, queryConfig config.QueryConfig) *
 }
 
 // Run listens to Pub/Sub messages, extracts event data and stores it in Redis sorted set
-func (c *Coordinator) Run(ctx context.Context, sub *pubsub.Subscription) {
-    // 1. Start a goroutine to keep consuming Pub/Sub messages and saving to Redis
-    go func() {
-        err := sub.Receive(ctx, func(ctx context.Context, msg *pubsub.Message) {
-            c.saveToRedis(ctx, msg.Data) // Your logic to parse JSON and ZADD to Redis
-            msg.Ack()
-        })
-        if err != nil {
-            log.Printf("[Coordinator] Pub/Sub receive error: %v", err)
-        }
-    }()
+func (c *Coordinator) Run(ctx context.Context, subscription *pubsub.Subscription) {
+	subscription.ReceiveSettings.MaxOutstandingMessages = 1
+	subscription.ReceiveSettings.NumGoroutines = 1
+	subscription.Receive(ctx, func(ctx context.Context, msg *pubsub.Message) {
+		var data map[string]string
+		err := json.Unmarshal(msg.Data, &data)
+		if err != nil {
+			msg.Ack()
+			return
+		}
 
-    // 2. Start the "Metronome" for calculations
-    ticker := time.NewTicker(10 * time.Second) // Trigger every 10 simulated seconds
-    defer ticker.Stop()
+		event := c.parseEventFromMap(data)
+		c.handleEvent(ctx, event, msg.Data)
 
-    // Start time for the first window
-    windowStart := time.Unix(1777161600, 0) 
-
-    for {
-        select {
-        case <-ctx.Done():
-            return
-        case <-ticker.C:
-            windowEnd := windowStart.Add(60 * time.Second)
-            
-            log.Printf("[Coordinator] Triggering calculation for window: %v to %v", windowStart, windowEnd)
-            
-            // Call the Worker
-            go c.triggerWorker(ctx, windowStart, windowEnd)
-            
-            // Slide the window forward
-            windowStart = windowStart.Add(10 * time.Second) 
-        }
-    }
+		msg.Ack()
+	})
 }
 
 // Write sub data into Event struct
