@@ -11,29 +11,20 @@ import fetch
 def handler(request):
     body = request.get_json(silent=True) or {}
     try:
-        start_index = int(body["start_index"])
-        end_index = int(body["end_index"])
+        window_start = int(body["window_start"])
+        window_end = int(body["window_end"])
+        query = str(body["query"])
     except (KeyError, TypeError, ValueError) as e:
         return {"error": f"Invalid payload: {e}"}, 400
 
-    print(f"Fetching records {start_index}–{end_index} from Redis...")
-    records = fetch.fetch_range(start_index, end_index)
+    print(f"Fetching records {window_start}–{window_end} from Redis...")
+    records = fetch.fetch_range(window_start, window_end)
     print(f"Loaded {len(records)} records.")
 
-    warnings = analytics.run(records)
+    results = analytics.run(records, query)
+    print(f"{len(results)} result(s).")
 
-    if warnings:
-        print(f"\n*** {len(warnings)} PROXIMITY WARNING(S) ***\n")
-        for w in warnings:
-            print(
-                f"  VESSEL {w['mmsi']} ({w['name']}) — {w['distance_nm']} nm from \"{w['zone_name']}\""
-                f" (threshold {w['threshold_nm']} nm)"
-                f" | sog={w['sog']} kn | status={w['navigationalStatus']} | ts={w['timestamp']}"
-            )
-    else:
-        print("No proximity warnings.")
-
-    return {"warnings": warnings, "records_processed": len(records)}
+    return {"results": results, "records_processed": len(records)}
 
 
 if __name__ == "__main__":

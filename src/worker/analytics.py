@@ -2,18 +2,17 @@ import duckdb
 
 from zones import HAZARD_ZONES
 
-METERS_PER_NM = 1852.0
+_conn = duckdb.connect()
+_conn.execute("INSTALL spatial")
+_conn.execute("LOAD spatial")
 
 
-def run(records: list[dict]) -> list[dict]:
+def run(records: list[dict], query: str) -> list[dict]:
     if not records:
         return []
 
-    conn = duckdb.connect()
-    conn.execute("INSTALL spatial")
-    conn.execute("LOAD spatial")
-
-    conn.execute("""
+    _conn.execute("DROP TABLE IF EXISTS vessels")
+    _conn.execute("""
         CREATE TABLE vessels (
             mmsi        VARCHAR,
             name        VARCHAR,
@@ -25,7 +24,7 @@ def run(records: list[dict]) -> list[dict]:
         )
     """)
 
-    conn.executemany(
+    _conn.executemany(
         "INSERT INTO vessels VALUES (?, ?, ?, ?, ?, ?, ?)",
         [
             (
@@ -42,7 +41,8 @@ def run(records: list[dict]) -> list[dict]:
         ],
     )
 
-    conn.execute("""
+    _conn.execute("DROP TABLE IF EXISTS zones")
+    _conn.execute("""
         CREATE TABLE zones (
             zone_name    VARCHAR,
             geom_wkt     VARCHAR,
@@ -50,35 +50,11 @@ def run(records: list[dict]) -> list[dict]:
         )
     """)
 
-    conn.executemany(
+    _conn.executemany(
         "INSERT INTO zones VALUES (?, ?, ?)",
         [(z["name"], z["wkt"], z["threshold_nm"]) for z in HAZARD_ZONES],
     )
 
-    warnings = conn.execute("""
-        SELECT
-            v.mmsi,
-            v.name,
-            v.timestamp,
-            v.sog,
-            v.navigationalStatus,
-            z.zone_name,
-            z.threshold_nm,
-            ROUND(
-                ST_Distance(
-                    ST_Transform(ST_Point(v.longitude, v.latitude), 'EPSG:4326', 'EPSG:3857'),
-                    ST_Transform(ST_GeomFromText(z.geom_wkt),       'EPSG:4326', 'EPSG:3857')
-                ) / ?
-            , 2) AS distance_nm
-        FROM vessels v
-        CROSS JOIN zones z
-        WHERE v.latitude IS NOT NULL
-          AND ST_Distance(
-                ST_Transform(ST_Point(v.longitude, v.latitude), 'EPSG:4326', 'EPSG:3857'),
-                ST_Transform(ST_GeomFromText(z.geom_wkt),       'EPSG:4326', 'EPSG:3857')
-              ) / ? < z.threshold_nm
-        ORDER BY distance_nm
-    """, [METERS_PER_NM, METERS_PER_NM]).fetchall()
-
-    columns = ["mmsi", "name", "timestamp", "sog", "navigationalStatus", "zone_name", "threshold_nm", "distance_nm"]
-    return [dict(zip(columns, row)) for row in warnings]
+    cursor = _conn.execute(query)
+    columns = [desc[0] for desc in cursor.description]
+    return [dict(zip(columns, row)) for row in cursor.fetchall()]
