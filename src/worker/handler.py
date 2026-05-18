@@ -1,8 +1,6 @@
 import json
 import sys
-
 import functions_framework
-
 import analytics
 import fetch
 
@@ -11,27 +9,30 @@ import fetch
 def handler(request):
     body = request.get_json(silent=True) or {}
     try:
-        start_index = int(body["start_index"])
-        end_index = int(body["end_index"])
+        window_start = int(body["window_start"])
+        window_end = int(body["window_end"])
     except (KeyError, TypeError, ValueError) as e:
         return {"error": f"Invalid payload: {e}"}, 400
 
-    print(f"Fetching records {start_index}–{end_index} from Redis...")
-    records = fetch.fetch_range(start_index, end_index)
-    print(f"Loaded {len(records)} records.")
+    print(f"Fetching window {window_start} - {window_end} from Redis...", flush=True)
+    records = fetch.fetch_window(window_start, window_end)
+    print(f"Loaded {len(records)} records.", flush=True)
 
     warnings = analytics.run(records)
 
     if warnings:
-        print(f"\n*** {len(warnings)} PROXIMITY WARNING(S) ***\n")
+        print(f"\n*** {len(warnings)} PROXIMITY WARNING(S) ***\n", flush=True)
         for w in warnings:
             print(
                 f"  VESSEL {w['mmsi']} ({w['name']}) — {w['distance_nm']} nm from \"{w['zone_name']}\""
                 f" (threshold {w['threshold_nm']} nm)"
-                f" | sog={w['sog']} kn | status={w['navigationalStatus']} | ts={w['timestamp']}"
+                f" | sog={w['sog']} kn | status={w['navigationalStatus']} | ts={w['timestamp']}",
+                flush=True
             )
     else:
-        print("No proximity warnings.")
+        print("No proximity warnings.", flush=True)
+
+    fetch.delete_window(window_start, window_end)
 
     return {"warnings": warnings, "records_processed": len(records)}
 
