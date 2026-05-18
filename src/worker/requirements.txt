@@ -1,2 +1,3 @@
 duckdb
 redis
+functions-framework
