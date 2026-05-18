@@ -13,8 +13,10 @@ RUN go mod download
 
 COPY src/coordinator/ ./
 
+RUN go build -o coordinator .
+
 EXPOSE 8000
 ENV PUBSUB_EMULATOR_HOST=pubsub:8085
 
-CMD ["go", "run", "."]
+CMD ["./coordinator"]
 
