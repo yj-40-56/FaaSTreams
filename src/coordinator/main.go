@@ -25,7 +25,7 @@ func main() {
 		log.Fatalf("Redis connection failed: %v", err)
 	}
 
-	pubsubClient, topic, subscription := setupPubSub(ctx)
+	pubsubClient, _, subscription := setupPubSub(ctx)
 	if pubsubClient == nil {
 		log.Fatalf("Failed to setup pubsub")
 	}
@@ -35,10 +35,6 @@ func main() {
 	queryConfig := config.LoadConfig(configPath)
 	// TODO: For testing purposes we just select the first query config add support for several later
 	selectedQuery := queryConfig.Queries[0]
-
-	// Simulator uses csv as source
-	simulator := NewSimulator(topic, "/app/data/ais.csv")
-	go simulator.Run(ctx)
 
 	coordinator := NewCoordinator(redisClient, selectedQuery)
 	coordinator.Run(ctx, subscription)

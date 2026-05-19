@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"log"
+	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -100,10 +103,26 @@ func (c *Coordinator) triggerWorker(ctx context.Context, windowStart time.Time, 
 	maxScore := strconv.FormatInt(windowEnd.Unix(), 10)
 
 	log.Printf("[Coordinator] Triggering worker for window (scores): %s - %s\n", minScore, maxScore)
+	workerURL := os.Getenv("WORKER_URL")
 
 	for i := 0; i < len(c.queryConfig.SQLQueries); i++ {
 		query := c.queryConfig.SQLQueries[i]
-		log.Printf("[Coordnator] Triggering worker for query: %s\n", query.Name)
-		//TODO: spawn worker
+		data := map[string]interface{}{
+			"window_start": windowStart.Unix(),
+			"window_end":   windowEnd.Unix(),
+			"query":        query.Query,
+		}
+
+		dataBytes, _ := json.Marshal(data)
+
+		go func() {
+			resp, err := http.Post(workerURL, "application/json", bytes.NewBuffer(dataBytes))
+			if err != nil {
+				log.Printf("[Coordinator] Failed to spawn worker for query %s: %v \n", query.Name, err)
+				return
+			}
+			defer resp.Body.Close()
+			log.Printf("[Coordinator] Worker spawned for query: %s\n", query.Name)
+		}()
 	}
 }

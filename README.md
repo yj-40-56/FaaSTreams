@@ -8,6 +8,18 @@ In the final production architecture, live data will be pushed from external sou
 
 ---
 
+## E2E Example
+For a local demonstration run terminal command:
+```bash
+docker compose -f docker/docker-compose.dev.yml up --build
+```
+When using this setup, ensure that the data folder contains a .csv with its header (column names).
+
+To delete the setup run:
+```bash
+docker compose -f docker/docker-compose.dev.yml down
+```
+
 ## Phase 1: Worker Development Setup
 
 Currently, this repository contains the foundational infrastructure needed to begin developing the **worker side** of the application.
