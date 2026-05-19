@@ -15,12 +15,12 @@ def handler(request):
     except (KeyError, TypeError, ValueError) as e:
         return {"error": f"Invalid payload: {e}"}, 400
 
-    print(f"Fetching records {window_start}–{window_end} from Redis...")
-    records = fetch.fetch_range(window_start, window_end)
-    print(f"Loaded {len(records)} records.")
+    print(f"Fetching records {window_start}–{window_end} from Redis...", flush=True)
+    records = fetch.fetch_window(window_start, window_end)
+    print(f"Loaded {len(records)} records.", flush=True)
 
     results = analytics.run(records, query)
-    print(f"{len(results)} result(s).")
+    print(f"{len(results)} result(s).", flush=True)
 
     return {"results": results, "records_processed": len(records)}
 
