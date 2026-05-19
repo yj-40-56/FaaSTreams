@@ -13,19 +13,19 @@ BATCH_SIZE = 500
 TIMESTAMP_FORMAT = "%d/%m/%Y %H:%M:%S"
 
 FIELD_MAP = {
-    "# Timestamp": "timestamp",
+    "# Timestamp": "# Timestamp",
     "Type of mobile": "typeOfMobile",
-    "MMSI": "mmsi",
-    "Latitude": "latitude",
-    "Longitude": "longitude",
-    "Navigational status": "navigationalStatus",
+    "MMSI": "MMSI",
+    "Latitude": "Latitude",
+    "Longitude": "Longitude",
+    "Navigational status": "Navigational status",
     "ROT": "rot",
-    "SOG": "sog",
+    "SOG": "SOG",
     "COG": "cog",
     "Heading": "heading",
     "IMO": "imo",
     "Callsign": "callsign",
-    "Name": "name",
+    "Name": "Name",
     "Ship type": "shipType",
     "Cargo type": "cargoType",
     "Width": "width",
@@ -55,7 +55,7 @@ def import_data(r: redis.Redis) -> None:
             }
 
             try:
-                score = datetime.strptime(record["timestamp"], TIMESTAMP_FORMAT).replace(tzinfo=timezone.utc).timestamp()
+                score = datetime.strptime(record["# Timestamp"], TIMESTAMP_FORMAT).replace(tzinfo=timezone.utc).timestamp()
             except ValueError:
                 skipped += 1
                 continue
