@@ -16,6 +16,8 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+const redisStreamKey = "mod-stream"
+
 type Event struct {
 	Timestamp time.Time
 	Raw       map[string]string
@@ -84,7 +86,7 @@ func (c *Coordinator) handleEvent(ctx context.Context, event *Event, rawData []b
 	score := float64(event.Timestamp.Unix())
 
 	// Store raw JSON directly in Redis
-	c.redisClient.ZAdd(ctx, "mod-stream", redis.Z{
+	c.redisClient.ZAdd(ctx, redisStreamKey, redis.Z{
 		Score:  score,
 		Member: string(rawData),
 	})
@@ -100,7 +102,7 @@ func (c *Coordinator) handleEvent(ctx context.Context, event *Event, rawData []b
 func (c *Coordinator) removeWindowData(ctx context.Context, windowStart time.Time, windowEnd time.Time) {
 	minScore := strconv.FormatInt(windowStart.Unix(), 10)
 	maxScore := strconv.FormatInt(windowEnd.Unix(), 10)
-	c.redisClient.ZRemRangeByScore(ctx, "mod-stream", minScore, maxScore)
+	c.redisClient.ZRemRangeByScore(ctx, redisStreamKey, minScore, maxScore)
 }
 
 func (c *Coordinator) triggerWorker(ctx context.Context, windowStart time.Time, windowEnd time.Time) {
