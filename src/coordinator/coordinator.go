@@ -97,6 +97,12 @@ func (c *Coordinator) handleEvent(ctx context.Context, event *Event, rawData []b
 	}
 }
 
+func (c *Coordinator) removeWindowData(ctx context.Context, windowStart time.Time, windowEnd time.Time) {
+	minScore := strconv.FormatInt(windowStart.Unix(), 10)
+	maxScore := strconv.FormatInt(windowEnd.Unix(), 10)
+	c.redisClient.ZRemRangeByScore(ctx, "mod-stream", minScore, maxScore)
+}
+
 // TODO: Pass window_start, window_end, query
 func (c *Coordinator) triggerWorker(ctx context.Context, windowStart time.Time, windowEnd time.Time) {
 	minScore := strconv.FormatInt(windowStart.Unix(), 10)
