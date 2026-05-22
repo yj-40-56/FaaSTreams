@@ -3,18 +3,17 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 
 	"cloud.google.com/go/pubsub"
 )
 
-const (
-	projectID      = "local-project"
-	topicID        = "ais-stream"
-	subscriptionID = "coordinator-sub"
-)
-
 // Pub/Sub returns the client, topic and subscription used to simulate local pub/sub broker
 func setupPubSub(ctx context.Context) (*pubsub.Client, *pubsub.Topic, *pubsub.Subscription) {
+	projectID := os.Getenv("PUBSUB_PROJECT_ID")
+	topicID := os.Getenv("PUBSUB_TOPIC_ID")
+	subscriptionID := os.Getenv("PUBSUB_SUBSCRIPTION_ID")
+
 	client, err := pubsub.NewClient(ctx, projectID)
 	if err != nil {
 		log.Fatalf("[PubSub] Failed to create Pub/Sub client: %v", err)
