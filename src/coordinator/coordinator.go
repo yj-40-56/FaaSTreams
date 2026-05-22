@@ -16,6 +16,8 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+const redisStreamKey = "mod-stream"
+
 type Event struct {
 	Timestamp time.Time
 	Raw       map[string]string
@@ -26,7 +28,6 @@ type Event struct {
 type Coordinator struct {
 	redisClient *redis.Client
 	windowSize  time.Duration
-	windowEnd   time.Time
 	queryConfig config.QueryConfig
 }
 
@@ -74,26 +75,43 @@ func (c *Coordinator) parseEventFromMap(data map[string]string) *Event {
 	}
 }
 
+// Retrieve current windowEnd from Redis, if not set return zero time
+func (c *Coordinator) getWindowEnd(ctx context.Context) time.Time {
+	val, err := c.redisClient.Get(ctx, "coordinator:window_end").Result()
+	if err != nil {
+		return time.Time{}
+	}
+	unix, _ := strconv.ParseInt(val, 10, 64)
+	return time.Unix(unix, 0)
+}
+
+func (c *Coordinator) setWindowEnd(ctx context.Context, t time.Time) {
+	c.redisClient.Set(ctx, "coordinator:window_end", t.Unix(), 0)
+}
+
 // Store event in Redis sorted set, where score is timestamp and member is JSON data, sorted by score
 func (c *Coordinator) handleEvent(ctx context.Context, event *Event, rawData []byte) {
-	if c.windowEnd.IsZero() {
-		c.windowEnd = event.Timestamp.Add(c.windowSize)
-		log.Printf("[Coordinator] First window ends at: %s\n", c.windowEnd.Format("15:04:05"))
+	windowEnd := c.getWindowEnd(ctx)
+	if windowEnd.IsZero() {
+		windowEnd = event.Timestamp.Add(c.windowSize)
+		c.setWindowEnd(ctx, windowEnd)
+		log.Printf("[Coordinator] First window ends at: %s\n", windowEnd.Format("15:04:05"))
 	}
 
 	score := float64(event.Timestamp.Unix())
 
 	// Store raw JSON directly in Redis
-	c.redisClient.ZAdd(ctx, "mod-stream", redis.Z{
+	c.redisClient.ZAdd(ctx, redisStreamKey, redis.Z{
 		Score:  score,
 		Member: string(rawData),
 	})
 
 	// Start worker for previous window
-	if event.Timestamp.After(c.windowEnd) {
-		windowStart := c.windowEnd.Add(-c.windowSize)
-		c.triggerWorker(ctx, windowStart, c.windowEnd)
-		c.windowEnd = c.windowEnd.Add(c.windowSize)
+	if event.Timestamp.After(windowEnd) {
+		windowStart := windowEnd.Add(-c.windowSize)
+		c.triggerWorker(ctx, windowStart, windowEnd)
+		windowEnd = windowEnd.Add(c.windowSize)
+		c.setWindowEnd(ctx, windowEnd)
 	}
 }
 

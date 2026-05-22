@@ -40,10 +40,13 @@ services:
       - "8000:8000"
     environment:
       PUBSUB_EMULATOR_HOST: pubsub:8085
-      WORKER_URL: http://worker:8080
+      PUBSUB_PROJECT_ID: local-project
+      PUBSUB_TOPIC_ID: ais-stream
+      PUBSUB_SUBSCRIPTION_ID: coordinator-sub
       REDIS_HOST: redis
       REDIS_PORT: "6379"
-      CONFIG_PATH: "/app/config/test.yaml"
+      WORKER_URL: http://worker:8080
+      CONFIG_PATH: /app/config/test.yaml
     volumes:
       - ../data:/app/data:ro
       - coordinator-go-cache:/go/pkg/mod
