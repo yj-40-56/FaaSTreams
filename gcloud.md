@@ -13,6 +13,18 @@
 |--------------|---------------------------|
 | Default zone | europe-west3 (Frankfurt)  |
 
+## Compute Instances
+
+### redis-bastion
+
+| Field         | Value          |
+|---------------|----------------|
+| Zone          | europe-west3-a |
+| Machine type  | e2-micro       |
+| Image         | debian-12      |
+| Internal IP   | 10.156.0.2     |
+| External IP   | 34.107.121.225 |
+
 ## Services
 
 ### Redis (Memorystore)
