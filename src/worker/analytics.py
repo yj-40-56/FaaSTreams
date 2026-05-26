@@ -1,18 +1,20 @@
 import duckdb
-
 from zones import HAZARD_ZONES
-
-_conn = duckdb.connect()
-_conn.execute("INSTALL spatial")
-_conn.execute("LOAD spatial")
 
 
 def run(records: list[dict], query: str) -> list[dict]:
     if not records:
         return []
 
-    _conn.execute("DROP TABLE IF EXISTS vessels")
-    _conn.execute("""
+    conn = duckdb.connect()
+
+    try:
+        # Load spatial extension for geographic operations
+        conn.execute("LOAD spatial")
+    except Exception as e:
+        print(f"Warning: Could not load spatial extension: {e}", flush=True)
+
+    conn.execute("""
         CREATE TABLE vessels (
             mmsi        VARCHAR,
             name        VARCHAR,
@@ -24,7 +26,7 @@ def run(records: list[dict], query: str) -> list[dict]:
         )
     """)
 
-    _conn.executemany(
+    conn.executemany(
         "INSERT INTO vessels VALUES (?, ?, ?, ?, ?, ?, ?)",
         [
             (
@@ -41,8 +43,7 @@ def run(records: list[dict], query: str) -> list[dict]:
         ],
     )
 
-    _conn.execute("DROP TABLE IF EXISTS zones")
-    _conn.execute("""
+    conn.execute("""
         CREATE TABLE zones (
             zone_name    VARCHAR,
             geom_wkt     VARCHAR,
@@ -50,11 +51,20 @@ def run(records: list[dict], query: str) -> list[dict]:
         )
     """)
 
-    _conn.executemany(
+    conn.executemany(
         "INSERT INTO zones VALUES (?, ?, ?)",
         [(z["name"], z["wkt"], z["threshold_nm"]) for z in HAZARD_ZONES],
     )
 
-    cursor = _conn.execute(query)
-    columns = [desc[0] for desc in cursor.description]
-    return [dict(zip(columns, row)) for row in cursor.fetchall()]
+    try:
+        print(f"Executing query: {query}", flush=True)
+        cursor = conn.execute(query)
+        columns = [desc[0] for desc in cursor.description]
+        results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    except Exception as e:
+        print(f"Error executing query: {e}", flush=True)
+        raise
+    finally:
+        conn.close()
+
+    return results

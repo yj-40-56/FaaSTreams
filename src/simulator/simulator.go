@@ -72,8 +72,14 @@ func (s *Simulator) Run(ctx context.Context) {
 		s.topic.Publish(ctx, &pubsub.Message{
 			Data: messageBytes,
 		})
+
+		if i%10000 == 0 {
+			log.Printf("[Sim] Published %d events\n", i)
+		}
+
 		time.Sleep(1 * time.Millisecond)
 	}
+	s.topic.Flush()
 
 	log.Printf("[Sim] Finished publishing all events")
 }

@@ -8,7 +8,6 @@ import (
 	"cloud.google.com/go/pubsub"
 )
 
-// Pub/Sub returns the client, topic and subscription used to simulate local pub/sub broker
 func setupPubSub(ctx context.Context) (*pubsub.Client, *pubsub.Topic, *pubsub.Subscription) {
 	projectID := os.Getenv("PUBSUB_PROJECT_ID")
 	topicID := os.Getenv("PUBSUB_TOPIC_ID")
@@ -20,6 +19,15 @@ func setupPubSub(ctx context.Context) (*pubsub.Client, *pubsub.Topic, *pubsub.Su
 	}
 
 	topic := client.Topic(topicID)
+	subscription := client.Subscription(subscriptionID)
+
+	mode := os.Getenv("RUN_MODE")
+	if mode == "http" {
+		log.Println("[PubSub] HTTP mode - using existing topic and subscription")
+		return client, topic, subscription
+	}
+
+	// Local mode - create topic and subscription if not exists
 	topicExists, err := topic.Exists(ctx)
 	if err != nil {
 		log.Fatalf("[PubSub] Failed to check if topic exists: %v", err)
@@ -33,7 +41,6 @@ func setupPubSub(ctx context.Context) (*pubsub.Client, *pubsub.Topic, *pubsub.Su
 		log.Printf("[PubSub] Topic already exists: %s", topicID)
 	}
 
-	subscription := client.Subscription(subscriptionID)
 	subscriptionExists, err := subscription.Exists(ctx)
 	if err != nil {
 		log.Fatalf("[PubSub] Failed to check if subscription exists: %v", err)

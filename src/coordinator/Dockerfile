@@ -15,8 +15,8 @@ COPY src/coordinator/ ./
 
 RUN go build -o coordinator .
 
-EXPOSE 8000
-ENV PUBSUB_EMULATOR_HOST=pubsub:8085
+EXPOSE 8080
+#ENV PUBSUB_EMULATOR_HOST=pubsub:8085
 
 CMD ["./coordinator"]
 

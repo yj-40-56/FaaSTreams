@@ -1,4 +1,3 @@
-duckdb
+duckdb==1.0.0
 functions-framework
 redis
-functions-framework
