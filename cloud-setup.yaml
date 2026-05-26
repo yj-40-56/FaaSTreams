@@ -1,0 +1,29 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'europe-west3-docker.pkg.dev/faastreams/e2e-cloud-sid/coordinator'
+      - '-f'
+      - 'src/coordinator/Dockerfile'
+      - '.'
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'europe-west3-docker.pkg.dev/faastreams/e2e-cloud-sid/simulator'
+      - '-f'
+      - 'src/simulator/Dockerfile'
+      - '.'
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'europe-west3-docker.pkg.dev/faastreams/e2e-cloud-sid/worker'
+      - '-f'
+      - 'src/worker/Dockerfile'
+      - '.'
+images:
+  - 'europe-west3-docker.pkg.dev/faastreams/e2e-cloud-sid/coordinator'
+  - 'europe-west3-docker.pkg.dev/faastreams/e2e-cloud-sid/simulator'
+  - 'europe-west3-docker.pkg.dev/faastreams/e2e-cloud-sid/worker'

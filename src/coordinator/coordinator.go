@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -62,6 +63,25 @@ func (c *Coordinator) Run(ctx context.Context, subscription *pubsub.Subscription
 	})
 }
 
+func (c *Coordinator) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Parse Pub/Sub requesst
+	var pushRequest struct {
+		Message struct {
+			Data []byte `json:"data"`
+		} `json:"message"`
+	}
+
+	json.NewDecoder(r.Body).Decode(&pushRequest)
+
+	var data map[string]string
+	json.Unmarshal(pushRequest.Message.Data, &data)
+
+	event := c.parseEventFromMap(data)
+	c.handleEvent(r.Context(), event, pushRequest.Message.Data)
+
+	w.WriteHeader(http.StatusOK)
+}
+
 // Write sub data into Event struct
 func (c *Coordinator) parseEventFromMap(data map[string]string) *Event {
 	timestamp, err := time.Parse("02/01/2006 15:04:05", data["# Timestamp"])
@@ -117,6 +137,15 @@ func (c *Coordinator) handleEvent(ctx context.Context, event *Event, rawData []b
 
 // TODO: Pass window_start, window_end, query
 func (c *Coordinator) triggerWorker(ctx context.Context, windowStart time.Time, windowEnd time.Time) {
+	lockKey := fmt.Sprintf("coordinator:lock:%d", windowEnd.Unix())
+
+	// One worker instace per window
+	locked, err := c.redisClient.SetNX(ctx, lockKey, "1", 5*time.Minute).Result()
+	if err != nil || !locked {
+		log.Printf("[Coordinator] Window %s already being processed, skipping\n", windowEnd.Format("15:04:05"))
+		return
+	}
+
 	minScore := strconv.FormatInt(windowStart.Unix(), 10)
 	maxScore := strconv.FormatInt(windowEnd.Unix(), 10)
 
@@ -136,7 +165,7 @@ func (c *Coordinator) triggerWorker(ctx context.Context, windowStart time.Time, 
 		go func() {
 			resp, err := http.Post(workerURL, "application/json", bytes.NewBuffer(dataBytes))
 			if err != nil {
-				log.Printf("[Coordinator] Failed to spawn worker for query %s: %v \n", query.Name, err)
+				log.Printf("[Coordinator] Failed to spawn worker for query %s: %v\n", query.Name, err)
 				return
 			}
 			defer resp.Body.Close()
