@@ -1,14 +1,19 @@
 import csv
+import json
 import os
 import json
 import time
 from datetime import datetime
+from datetime import datetime, timezone
+
 import redis
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 DATA_FILE = "/app/data/ais.csv"
+REDIS_KEY = "mod-stream"
 BATCH_SIZE = 500
+TIMESTAMP_FORMAT = "%d/%m/%Y %H:%M:%S"
 
 FIELD_MAP = {
     "# Timestamp": "# Timestamp",
@@ -45,10 +50,11 @@ def parse_timestamp(ts_str: str) -> float:
 
 def import_data(r: redis.Redis) -> None:
     total = 0
+    skipped = 0
     pipe = r.pipeline(transaction=False)
     with open(DATA_FILE, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
-        for i, row in enumerate(reader):
+        for row in reader:
             record = {
                 clean_key: row.get(csv_key, "")
                 for csv_key, clean_key in FIELD_MAP.items()
@@ -58,14 +64,20 @@ def import_data(r: redis.Redis) -> None:
             except (ValueError, KeyError):
                 continue
 
-            pipe.zadd("mod-stream", {json.dumps(record): score})
+            try:
+                score = datetime.strptime(record["# Timestamp"], TIMESTAMP_FORMAT).replace(tzinfo=timezone.utc).timestamp()
+            except ValueError:
+                skipped += 1
+                continue
+
+            pipe.zadd(REDIS_KEY, {json.dumps(record): score})
             total += 1
             if total % BATCH_SIZE == 0:
                 pipe.execute()
                 pipe = r.pipeline(transaction=False)
                 print(f"  Imported {total} records...")
     pipe.execute()
-    print(f"Done. Imported {total} records.")
+    print(f"Done. Imported {total} records ({skipped} skipped due to unparseable timestamp).")
 
 if __name__ == "__main__":
     print(f"Connecting to Redis at {REDIS_HOST}:{REDIS_PORT}...")

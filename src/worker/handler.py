@@ -11,6 +11,7 @@ def handler(request):
     try:
         window_start = int(body["window_start"])
         window_end = int(body["window_end"])
+        query = str(body["query"])
     except (KeyError, TypeError, ValueError) as e:
         return {"error": f"Invalid payload: {e}"}, 400
 

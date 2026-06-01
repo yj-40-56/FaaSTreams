@@ -6,10 +6,14 @@ def run(records: list[dict], query: str) -> list[dict]:
     if not valid_records:
         print("No valid records with coordinates", flush=True)
         return []
+_conn = duckdb.connect()
+_conn.execute("INSTALL spatial")
+_conn.execute("LOAD spatial")
 
-    conn = duckdb.connect()
-    conn.execute("INSTALL spatial")
-    conn.execute("LOAD spatial")
+
+def run(records: list[dict], query: str) -> list[dict]:
+    if not records:
+        return []
 
     conn.execute("""
         CREATE TABLE events (
@@ -47,7 +51,20 @@ def run(records: list[dict], query: str) -> list[dict]:
         ],
     )
 
-    results = conn.execute(query).fetchall()
-    columns = [desc[0] for desc in conn.description]
+    _conn.execute("DROP TABLE IF EXISTS zones")
+    _conn.execute("""
+        CREATE TABLE zones (
+            zone_name    VARCHAR,
+            geom_wkt     VARCHAR,
+            threshold_nm DOUBLE
+        )
+    """)
 
-    return [dict(zip(columns, row)) for row in results]
+    _conn.executemany(
+        "INSERT INTO zones VALUES (?, ?, ?)",
+        [(z["name"], z["wkt"], z["threshold_nm"]) for z in HAZARD_ZONES],
+    )
+
+    cursor = _conn.execute(query)
+    columns = [desc[0] for desc in cursor.description]
+    return [dict(zip(columns, row)) for row in cursor.fetchall()]
