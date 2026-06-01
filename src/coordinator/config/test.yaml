@@ -4,7 +4,7 @@ queries:
     window_size: 60
     sql:
       - name: test
-        query: "SELECT COUNT(DISTINCT MMSI) as vessel_count FROM events"
+        query: "SELECT COUNT(DISTINCT MMSI) as vessel_count FROM vessels"
   - name: hazard_zones_proximity_alerts
     window_type: tumbling
     window_size: 60

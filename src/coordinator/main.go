@@ -4,6 +4,7 @@ import (
 	"context"
 	"coordinator/config"
 	"log"
+	"net/http"
 	"os"
 
 	"github.com/redis/go-redis/v9"
@@ -37,5 +38,22 @@ func main() {
 	selectedQuery := queryConfig.Queries[0]
 
 	coordinator := NewCoordinator(redisClient, selectedQuery)
-	coordinator.Run(ctx, subscription)
+
+	mode := os.Getenv("RUN_MODE")
+	if mode == "http" {
+		// GCP setup
+		port := os.Getenv("PORT")
+		if port == "" {
+			port = "8080"
+		}
+		log.Println("[Main] Starting HTTP server...")
+		http.Handle("/", coordinator)
+		http.ListenAndServe(":"+port, nil)
+	} else {
+		// Local setup
+		log.Println("[Main] Starting subscription receiver...")
+		coordinator.Run(ctx, subscription)
+	}
 }
+
+
