@@ -34,6 +34,8 @@ func (s *Simulator) Run(ctx context.Context) {
 	defer file.Close()
 
 	reader := csv.NewReader(file)
+	reader.Comma = ','
+	reader.LazyQuotes = true
 	csvHeaders, err := reader.Read()
 	if err != nil {
 		log.Printf("[Sim] Failed to read CSV header: %v\n", err)
@@ -57,7 +59,7 @@ func (s *Simulator) Run(ctx context.Context) {
 			record[csvHeaders[i]] = row[i]
 		}
 
-		currentTimeCSV, err := time.Parse("2006-01-02 15:04:05", record["Timestamp"])
+		currentTimeCSV, err := time.Parse("02/01/2006 15:04:05", record["# Timestamp"])
 		if err != nil {
 			log.Printf("[SIMULATOR] Error: Could not parse timestamp '%s' in row: %v", record["Timestamp"], err)
 			continue
@@ -71,7 +73,7 @@ func (s *Simulator) Run(ctx context.Context) {
 		elapsedTimeCSV := currentTimeCSV.Sub(firstTimestampCSV)
 		scaledElapsedTime := time.Duration(float64(elapsedTimeCSV) / scaleFactor)
 		newTimestamp := simulationStartReal.Add(scaledElapsedTime)
-		record["Timestamp"] = newTimestamp.Format("2006-01-02 15:04:05")
+		record["# Timestamp"] = newTimestamp.Format("2006-01-02 15:04:05")
 
 		time.Sleep(time.Until(newTimestamp))
 
