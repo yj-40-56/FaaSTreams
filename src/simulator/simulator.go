@@ -73,6 +73,9 @@ func (s *Simulator) Run(ctx context.Context) {
 		elapsedTimeCSV := currentTimeCSV.Sub(firstTimestampCSV)
 		scaledElapsedTime := time.Duration(float64(elapsedTimeCSV) / scaleFactor)
 		newTimestamp := simulationStartReal.Add(scaledElapsedTime)
+
+		log.Printf("DEBUG: send event for csv-time %s in %v", record["# Timestamp"], time.Until(newTimestamp))
+
 		record["# Timestamp"] = newTimestamp.Format("2006-01-02 15:04:05")
 
 		time.Sleep(time.Until(newTimestamp))
