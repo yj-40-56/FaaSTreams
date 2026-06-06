@@ -48,11 +48,18 @@ func (s *Simulator) Run(ctx context.Context) {
 	const scaleFactor = 60.0
 
 	// Append each row into slice
+	lineCount := 0
 	for {
 		row, err := reader.Read()
 		if err != nil {
+			if err.Error() == "EOF" {
+				log.Printf("[Sim] Finished: Reached end of file. Total lines: %d", lineCount)
+			} else {
+				log.Printf("[Sim] ERROR: Reader stopped at line %d: %v", lineCount, err)
+			}
 			break
 		}
+		lineCount++
 
 		record := make(map[string]string)
 		for i := 0; i < len(csvHeaders); i++ {
@@ -74,7 +81,9 @@ func (s *Simulator) Run(ctx context.Context) {
 		scaledElapsedTime := time.Duration(float64(elapsedTimeCSV) / scaleFactor)
 		newTimestamp := simulationStartReal.Add(scaledElapsedTime)
 
-		log.Printf("DEBUG: send event for csv-time %s in %v", record["# Timestamp"], time.Until(newTimestamp))
+		if lineCount%1000 == 0 {
+			log.Printf("DEBUG: Processing line %d, CSV-Time: %s", lineCount, record["# Timestamp"])
+		}
 
 		record["# Timestamp"] = newTimestamp.Format("2006-01-02 15:04:05")
 
@@ -82,6 +91,7 @@ func (s *Simulator) Run(ctx context.Context) {
 
 		messageBytes, err := json.Marshal(record)
 		if err != nil {
+			log.Printf("[SIMULATOR] JSON error at line %d: %v", lineCount, err)
 			continue
 		}
 		s.topic.Publish(ctx, &pubsub.Message{Data: messageBytes})
