@@ -1,13 +1,13 @@
 queries:
   - name: test_analytics
     window_type: tumbling
-    window_size: 60
+    window_size: 30
     sql:
       - name: test
         query: "SELECT COUNT(DISTINCT MMSI) as vessel_count FROM vessels"
   - name: hazard_zones_proximity_alerts
     window_type: tumbling
-    window_size: 60
+    window_size: 30
     sql:
       - name: hazard_zones_proximity_alerts
         query: "SELECT v.mmsi, v.name, v.sog, z.zone_name, ROUND(ST_Distance(ST_Transform(ST_Point(v.longitude, v.latitude), 'EPSG:4326', 'EPSG:3857'), ST_Transform(ST_GeomFromText(z.geom_wkt), 'EPSG:4326', 'EPSG:3857')) / 1852.0, 2) AS distance_nm FROM vessels v CROSS JOIN zones z WHERE v.latitude IS NOT NULL AND ST_Distance(ST_Transform(ST_Point(v.longitude, v.latitude), 'EPSG:4326', 'EPSG:3857'), ST_Transform(ST_GeomFromText(z.geom_wkt), 'EPSG:4326', 'EPSG:3857')) / 1852.0 < z.threshold_nm ORDER BY distance_nm"

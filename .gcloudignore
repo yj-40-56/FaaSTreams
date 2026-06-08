@@ -1,0 +1,6 @@
+.git
+data/
+*.csv
+node_modules/
+target/
+flink/

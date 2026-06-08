@@ -25,6 +25,7 @@ def handler(request):
     print(f"Loaded {len(records)} records.", flush=True)
 
     results = analytics.run(records, query)
+    fetch.delete_window(window_start, window_end)
     print(f"{len(results)} result(s).", flush=True)
 
     _forward_to_sink(results, window_start, window_end, query)

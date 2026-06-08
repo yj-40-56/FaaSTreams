@@ -1,4 +1,4 @@
 duckdb
 functions-framework
 redis
-functions-framework
+google-cloud-pubsub

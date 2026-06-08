@@ -2,14 +2,13 @@ import duckdb
 
 from zones import HAZARD_ZONES
 
-_conn = duckdb.connect()
-_conn.execute("INSTALL spatial")
-_conn.execute("LOAD spatial")
-
-
 def run(records: list[dict], query: str) -> list[dict]:
     if not records:
         return []
+
+    _conn = duckdb.connect()
+    _conn.execute("INSTALL spatial")
+    _conn.execute("LOAD spatial")
 
     _conn.execute("DROP TABLE IF EXISTS vessels")
     _conn.execute("""

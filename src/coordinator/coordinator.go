@@ -112,7 +112,7 @@ func (c *Coordinator) setWindowEnd(ctx context.Context, t time.Time) {
 // Store event in Redis sorted set, where score is timestamp and member is JSON data, sorted by score
 func (c *Coordinator) handleEvent(ctx context.Context, event *Event, rawData []byte) {
 	windowEnd := c.getWindowEnd(ctx)
-	if windowEnd.IsZero() {
+	if windowEnd.IsZero() || windowEnd.Unix() > event.Timestamp.Unix()+int64(c.windowSize.Seconds()) {
 		windowEnd = event.Timestamp.Add(c.windowSize)
 		c.setWindowEnd(ctx, windowEnd)
 		log.Printf("[Coordinator] First window ends at: %s\n", windowEnd.Format("15:04:05"))
@@ -127,12 +127,12 @@ func (c *Coordinator) handleEvent(ctx context.Context, event *Event, rawData []b
 	})
 
 	// Start worker for previous window
-	if event.Timestamp.After(windowEnd) {
+	for event.Timestamp.After(windowEnd) {
 		windowStart := windowEnd.Add(-c.windowSize)
 		c.triggerWorker(ctx, windowStart, windowEnd)
 		windowEnd = windowEnd.Add(c.windowSize)
-		c.setWindowEnd(ctx, windowEnd)
 	}
+	c.setWindowEnd(ctx, windowEnd)
 }
 
 // TODO: Pass window_start, window_end, query

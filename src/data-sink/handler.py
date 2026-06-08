@@ -25,6 +25,7 @@ def handler(request):
         "window_start": window_start,
         "window_end": window_end,
         "query": query,
+        "pipeline": "faas",
     })
 
     r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)

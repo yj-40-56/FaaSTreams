@@ -55,5 +55,3 @@ func main() {
 		coordinator.Run(ctx, subscription)
 	}
 }
-
-
