@@ -13,7 +13,7 @@ RUN go mod download
 
 COPY src/coordinator/ ./
 
-RUN go build -o coordinator .
+RUN go build -o coordinator ./cmd/local
 
 EXPOSE 8080
 #ENV PUBSUB_EMULATOR_HOST=pubsub:8085
