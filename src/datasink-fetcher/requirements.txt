@@ -1,0 +1,3 @@
+# src/datasink-fetcher/requirements.txt
+functions-framework==3.*
+redis==5.*
