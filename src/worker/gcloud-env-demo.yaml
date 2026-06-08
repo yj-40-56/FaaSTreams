@@ -1,0 +1,3 @@
+DATA_SINK_URL: https://europe-west3-faastreams.cloudfunctions.net/data-sink-demo
+REDIS_HOST: 10.101.64.19
+REDIS_PORT: "6379"
