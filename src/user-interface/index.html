@@ -1,0 +1,95 @@
+<!-- Streaming Processing Engine for Marine Traffic Events Web Page
+    Streaming vessel moving object data ini the Danish maritime zones via a FaaS pipeline.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Marine Traffic Streaming Engine</title>
+<link rel="stylesheet" href="style.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=database" />
+</head>
+<body>
+<div class="app-shell">
+
+  <header>
+    <h1>Streaming Processing Engine for Marine Traffic Events</h1>
+    <p>Streaming vessel moving object data ini the Danish maritime zones via a FaaS pipeline.</p>
+  </header>
+
+  <div class="info-box">
+    
+    <div class="data-note">
+        <span class="tag tag-gray" style="margin-right:8px">MOD Data Simulator Information:</span>
+      This is an MVP frontend for our simulated FaaS pipeline. <br> Our <strong>simulator</strong> compresses a full day of data into about 1 minute, producing approx. 45.546 records per 30 second window.
+      The <strong>mod-stream</strong> Redis key holds 1.6M raw AIS pings. <br>
+
+      <!-- <span class="tag tag-gray" style="margin-right:8px">MOD Data Simulator Information:</span>
+      This is an MVP frontend for a simulated FaaS pipeline. <br> The simulator replays a full day of Danish AIS data compressed into about 1 minute, producing approx. 45,546 records per 30s window. <br>
+      The <strong>mod-stream</strong> Redis key holds 1.6M raw AIS pings. <br>
+      The <strong>analytics-results</strong> key holds processed query outputs from the worker (vessel count aggregations and raw position snapshots). 
+      <br>
+      Positions on the map are real vessel locations from June 7, 2026; the timing is compressed, not live. -->
+    </div>
+
+    <div class="info-grid">
+
+      <div class="info-section">
+        <div class="info-section-title">Pipeline</div>
+        <div class="info-row"><span class="tag tag-blue">Cloud Function</span><span class="info-label">worker-louw</span></div>
+        <div class="info-row"><span class="tag tag-blue">Cloud Function</span><span class="info-label">data-sink</span></div>
+        <div class="info-row"><span class="tag tag-green">Cloud Function</span><span class="info-label">datasink-fetcher</span></div>
+        <div class="info-row"><span class="tag tag-purple">Cloud Run</span><span class="info-label">coordinator-sid</span></div>
+      </div>
+
+      <div class="info-section">
+        <div class="info-section-title">Infrastructure</div>
+        <div class="info-row"><span class="tag tag-gray">Redis</span><span class="info-label">10.101.64.19:6379</span></div>
+        <div class="info-row"><span class="tag tag-gray">Region</span><span class="info-label">europe-west3 (Frankfurt)</span></div>
+        <div class="info-row"><span class="tag tag-gray">Project</span><span class="info-label">faastreams</span></div>
+        <div class="info-row"><span class="tag tag-gray">Stream</span><span class="info-label">mod-stream --> analytics-results</span></div>
+      </div>
+
+      <div class="info-section">
+        <div class="info-section-title">Data sink contents</div>
+        <div class="info-row"><span class="tag tag-orange">Total</span><span class="info-label"><span id="sink-count">—</span> stored results</span></div>
+        <div class="info-row"><span class="tag tag-orange">FaaS windows</span><span class="info-label"><span id="faas-entry-count">—</span> processed</span></div>
+        <div class="info-row"><span class="tag tag-orange">Count queries</span><span class="info-label"><span id="count-query-count">—</span> entries</span></div>
+        <div class="info-row"><span class="tag tag-orange">With positions</span><span class="info-label"><span id="position-query-count">—</span> entries</span></div>
+      </div>
+
+      <div class="info-section clock-section">
+        <div class="info-section-title">System time</div>
+        <div class="clock" id="clock">00:00:00</div>
+        <div class="clock-date" id="clock-date"></div>
+        <div style="margin-top:10px"><span id="faas-count" class="tag tag-green">FaaS: loading...</span></div>
+      </div>
+
+    </div>
+
+
+  </div>
+
+  <main>
+    <div class="map-card">
+      <div id="map"></div>
+    </div>
+    <div class="results-card">
+      <div class="results-header">
+        <h2>Vessels in window</h2>
+        <span id="count-badge">0</span>
+      </div>
+      <div class="results-subheader" id="results-subheader"></div>
+      <div id="results-list" class="results-list">
+        <p class="empty">Loading vessels...</p>
+      </div>
+    </div>
+  </main>
+
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="app.js"></script>
+</body>
+</html>
