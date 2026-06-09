@@ -33,6 +33,11 @@ func main() {
 			time.Sleep(2 * time.Second)
 			continue
 		}
+
+		topic.PublishSettings.DelayThreshold = 0
+		topic.PublishSettings.CountThreshold = 1
+		topic.PublishSettings.ByteThreshold = 1
+
 		if exists {
 			log.Println("[Sim] Topic found")
 			break
