@@ -10,6 +10,7 @@ import (
 type SQLQuery struct {
 	Name  string `yaml:"name"`
 	Query string `yaml:"query"`
+	ReturnType string `yaml:"return_type"`
 }
 
 // QueryConfigs with several queries, gets defined by user/program

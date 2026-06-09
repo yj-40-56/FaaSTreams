@@ -17,6 +17,8 @@ def handler(request):
         window_start = int(body["window_start"])
         window_end = int(body["window_end"])
         query = str(body["query"])
+        query_name = body.get("query_name", "unknown")
+        return_type = body.get("return_type", "unknown")
     except (KeyError, TypeError, ValueError) as e:
         return {"error": f"Invalid payload: {e}"}, 400
 
@@ -27,12 +29,12 @@ def handler(request):
     results = analytics.run(records, query)
     print(f"{len(results)} result(s).", flush=True)
 
-    _forward_to_sink(results, window_start, window_end, query)
+    _forward_to_sink(results, window_start, window_end, query, query_name, return_type)
 
-    return {"results": results, "records_processed": len(records)}
+    return {"results": results, "records_processed": len(records), "query_name": query_name, "return_type": return_type}
 
 
-def _forward_to_sink(results, window_start, window_end, query):
+def _forward_to_sink(results, window_start, window_end, query, query_name, return_type):
     if not DATA_SINK_URL:
         print("DATA_SINK_URL not set, skipping data sink.", flush=True)
         return
@@ -41,6 +43,8 @@ def _forward_to_sink(results, window_start, window_end, query):
         "window_start": window_start,
         "window_end": window_end,
         "query": query,
+        "query_name": query_name,
+        "return_type": return_type,
     }).encode()
     req = urllib.request.Request(DATA_SINK_URL, data=payload, headers={"Content-Type": "application/json"})
     try:
