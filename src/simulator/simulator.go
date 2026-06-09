@@ -34,16 +34,18 @@ func (s *Simulator) Run(ctx context.Context) {
 	defer file.Close()
 
 	reader := csv.NewReader(file)
-
-	// Extract header with column names
-	headers, err := reader.Read()
+	reader.Comma = ','
+	reader.LazyQuotes = true
+	csvHeaders, err := reader.Read()
 	if err != nil {
 		log.Printf("[Sim] Failed to read CSV header: %v\n", err)
 		return
 	}
 
-	// Create slice of all rows, where row has columns as key and values as value
-	var allRows []map[string]string
+	simulationStartReal := time.Now()
+	var firstTimestampCSV time.Time
+	var initialized bool
+	const scaleFactor = 60.0
 
 	// Append each row into slice
 	for {
@@ -53,31 +55,37 @@ func (s *Simulator) Run(ctx context.Context) {
 		}
 
 		record := make(map[string]string)
-		for i := 0; i < len(headers); i++ {
-			record[headers[i]] = row[i]
+		for i := 0; i < len(csvHeaders); i++ {
+			record[csvHeaders[i]] = row[i]
 		}
 
-		allRows = append(allRows, record)
-	}
-
-	log.Printf("[Sim] Read %d rows from CSV\n", len(allRows))
-
-	// Publish each event to Pub/Sub
-	for i := 0; i < len(allRows); i++ {
-		messageBytes, err := json.Marshal(allRows[i])
+		currentTimeCSV, err := time.Parse("02/01/2006 15:04:05", record["# Timestamp"])
 		if err != nil {
+			log.Printf("[SIMULATOR] Error: Could not parse timestamp '%s' in row: %v", record["Timestamp"], err)
 			continue
 		}
 
-		s.topic.Publish(ctx, &pubsub.Message{
-			Data: messageBytes,
-		})
-
-		if i%10000 == 0 {
-			log.Printf("[Sim] Published %d events\n", i)
+		if !initialized {
+			firstTimestampCSV = currentTimeCSV
+			initialized = true
 		}
 
-		time.Sleep(1 * time.Millisecond)
+		elapsedTimeCSV := currentTimeCSV.Sub(firstTimestampCSV)
+		scaledElapsedTime := time.Duration(float64(elapsedTimeCSV) / scaleFactor)
+		newTimestamp := simulationStartReal.Add(scaledElapsedTime)
+
+		log.Printf("DEBUG: send event for csv-time %s in %v", record["# Timestamp"], time.Until(newTimestamp))
+
+		record["# Timestamp"] = newTimestamp.Format("2006-01-02 15:04:05")
+
+		time.Sleep(time.Until(newTimestamp))
+
+		messageBytes, err := json.Marshal(record)
+		if err != nil {
+			continue
+		}
+		s.topic.Publish(ctx, &pubsub.Message{Data: messageBytes})
+
 	}
 	s.topic.Flush()
 
