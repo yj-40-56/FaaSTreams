@@ -1,45 +1,51 @@
 import duckdb
 from zones import HAZARD_ZONES
 
-
 def run(records: list[dict], query: str) -> list[dict]:
-    if not records:
+    valid_records = [r for r in records if r.get("Latitude") and r.get("Longitude")]
+    if not valid_records:
+        print("No valid records with coordinates", flush=True)
         return []
 
     conn = duckdb.connect()
-
     try:
-        # Load spatial extension for geographic operations
         conn.execute("LOAD spatial")
     except Exception as e:
         print(f"Warning: Could not load spatial extension: {e}", flush=True)
 
     conn.execute("""
-        CREATE TABLE vessels (
-            mmsi        VARCHAR,
-            name        VARCHAR,
-            latitude    DOUBLE,
-            longitude   DOUBLE,
-            sog         DOUBLE,
-            timestamp   VARCHAR,
-            navigationalStatus VARCHAR
+        CREATE TABLE events (
+            MMSI                VARCHAR,
+            Name                VARCHAR,
+            Latitude            DOUBLE,
+            Longitude           DOUBLE,
+            SOG                 DOUBLE,
+            Timestamp           VARCHAR,
+            NavigationalStatus  VARCHAR,
+            shipType            VARCHAR,
+            typeOfMobile        VARCHAR,
+            heading             DOUBLE,
+            destination         VARCHAR
         )
     """)
 
     conn.executemany(
-        "INSERT INTO vessels VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
             (
                 r.get("MMSI", ""),
                 r.get("Name", ""),
-                float(r["Latitude"]) if r.get("Latitude") else None,
-                float(r["Longitude"]) if r.get("Longitude") else None,
+                float(r["Latitude"]),
+                float(r["Longitude"]),
                 float(r["SOG"]) if r.get("SOG") else None,
                 r.get("# Timestamp", ""),
                 r.get("Navigational status", ""),
+                r.get("shipType", ""),
+                r.get("typeOfMobile", ""),
+                float(r["heading"]) if r.get("heading") else None,
+                r.get("destination", ""),
             )
-            for r in records
-            if r.get("Latitude") and r.get("Longitude")
+            for r in valid_records
         ],
     )
 

@@ -1,6 +1,9 @@
 import csv
 import json
 import os
+import json
+import time
+from datetime import datetime
 from datetime import datetime, timezone
 
 import redis
@@ -41,11 +44,14 @@ FIELD_MAP = {
     "D": "d",
 }
 
+def parse_timestamp(ts_str: str) -> float:
+    dt = datetime.strptime(ts_str, "%d/%m/%Y %H:%M:%S")
+    return dt.timestamp()
+
 def import_data(r: redis.Redis) -> None:
     total = 0
     skipped = 0
     pipe = r.pipeline(transaction=False)
-
     with open(DATA_FILE, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
@@ -53,6 +59,10 @@ def import_data(r: redis.Redis) -> None:
                 clean_key: row.get(csv_key, "")
                 for csv_key, clean_key in FIELD_MAP.items()
             }
+            try:
+                score = parse_timestamp(row["# Timestamp"])
+            except (ValueError, KeyError):
+                continue
 
             try:
                 score = datetime.strptime(record["# Timestamp"], TIMESTAMP_FORMAT).replace(tzinfo=timezone.utc).timestamp()
@@ -62,15 +72,12 @@ def import_data(r: redis.Redis) -> None:
 
             pipe.zadd(REDIS_KEY, {json.dumps(record): score})
             total += 1
-
             if total % BATCH_SIZE == 0:
                 pipe.execute()
                 pipe = r.pipeline(transaction=False)
                 print(f"  Imported {total} records...")
-
     pipe.execute()
     print(f"Done. Imported {total} records ({skipped} skipped due to unparseable timestamp).")
-
 
 if __name__ == "__main__":
     print(f"Connecting to Redis at {REDIS_HOST}:{REDIS_PORT}...")
