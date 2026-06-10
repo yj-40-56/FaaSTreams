@@ -25,8 +25,7 @@ func SetupFromEnv(ctx context.Context) *Coordinator {
 		log.Fatalf("Redis connection failed: %v", err)
 	}
 
-	configPath := os.Getenv("CONFIG_PATH")
-	queryConfig := config.LoadConfig(configPath)
+	queryConfig := config.LoadConfig()
 	// TODO: For testing purposes we just select the first query config add support for several later
 	selectedQuery := queryConfig.Queries[0]
 

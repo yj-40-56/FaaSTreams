@@ -7,4 +7,3 @@ WORKER_URL: https://europe-west3-faastreams.cloudfunctions.net/worker-demo
 PUBSUB_PROJECT_ID: faastreams
 PUBSUB_TOPIC_ID: ais-stream-demo
 PUBSUB_SUBSCRIPTION_ID: ais-stream-demo-sub
-CONFIG_PATH: config/test.yaml

@@ -3,14 +3,12 @@ package config
 import (
 	"embed"
 	"log"
-	"os"
-	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
 
-//go:embed test.yaml
-var embeddedConfigs embed.FS
+//go:embed config.yaml
+var embeddedConfig embed.FS
 
 type SQLQuery struct {
 	Name  string `yaml:"name"`
@@ -30,15 +28,11 @@ type Config struct {
 	Queries []QueryConfig `yaml:"queries"`
 }
 
-func LoadConfig(path string) Config {
-	file, err := os.ReadFile(path)
+// LoadConfig reads the query/window configuration bundled into the binary via go:embed.
+func LoadConfig() Config {
+	file, err := embeddedConfig.ReadFile("config.yaml")
 	if err != nil {
-		// Working directory at runtime varies across local, container, and Cloud Functions
-		// deployments, so fall back to the config bundled into the binary via go:embed.
-		file, err = embeddedConfigs.ReadFile(filepath.Base(path))
-		if err != nil {
-			log.Fatalf("[Config] Failed to read config file: %v", err)
-		}
+		log.Fatalf("[Config] Failed to read config file: %v", err)
 	}
 
 	var config Config
