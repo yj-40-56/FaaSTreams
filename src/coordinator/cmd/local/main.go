@@ -6,15 +6,15 @@ import (
 	"net/http"
 	"os"
 
-	coordinatorfn "github.com/faastreams/coordinator"
+	"github.com/faastreams/coordinator/internal/coordinatorcore"
 )
 
 func main() {
 	ctx := context.Background()
 
-	coordinator := coordinatorfn.SetupFromEnv(ctx)
+	coordinator := coordinatorcore.SetupFromEnv(ctx)
 
-	_, _, subscription := coordinatorfn.SetupPubSub(ctx)
+	_, _, subscription := coordinatorcore.SetupPubSub(ctx)
 
 	mode := os.Getenv("RUN_MODE")
 	if mode == "http" {

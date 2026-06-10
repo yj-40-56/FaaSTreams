@@ -1,4 +1,4 @@
-package coordinatorfn
+package coordinatorcore
 
 import (
 	"context"

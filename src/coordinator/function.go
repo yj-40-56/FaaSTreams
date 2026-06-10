@@ -4,13 +4,15 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/faastreams/coordinator/internal/coordinatorcore"
+
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
 )
 
-var coordinatorInstance *Coordinator
+var coordinatorInstance *coordinatorcore.Coordinator
 
 func init() {
-	coordinatorInstance = SetupFromEnv(context.Background())
+	coordinatorInstance = coordinatorcore.SetupFromEnv(context.Background())
 	functions.HTTP("Handler", Handler)
 }
 
