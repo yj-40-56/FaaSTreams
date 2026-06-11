@@ -1,6 +1,8 @@
 import json
 import os
 import sys
+import time
+import traceback
 import urllib.request
 import urllib.error
 import functions_framework
@@ -17,17 +19,27 @@ def handler(request):
         window_end = int(body["window_end"])
         query = str(body["query"])
     except (KeyError, TypeError, ValueError) as e:
+        print(f"[Worker] Invalid payload: {e} | body={body}", flush=True)
         return {"error": f"Invalid payload: {e}"}, 400
 
     query_name = body.get("query_name", "unknown")
     return_type = body.get("return_type", "unknown")
+    log_prefix = f"[Worker:{query_name}]"
 
-    print(f"Fetching window {window_start} - {window_end} from Redis...", flush=True)
-    records = fetch.fetch_window(window_start, window_end)
-    print(f"Loaded {len(records)} records.", flush=True)
+    start_human = time.strftime("%H:%M:%S", time.gmtime(window_start))
+    end_human = time.strftime("%H:%M:%S", time.gmtime(window_end))
+    print(f"{log_prefix} Received window {start_human} - {end_human} ({window_start}-{window_end})", flush=True)
 
-    results = analytics.run(records, query)
-    print(f"{len(results)} result(s).", flush=True)
+    try:
+        print(f"{log_prefix} Fetching window from Redis...", flush=True)
+        records = fetch.fetch_window(window_start, window_end)
+        print(f"{log_prefix} Loaded {len(records)} records.", flush=True)
+
+        results = analytics.run(records, query)
+        print(f"{log_prefix} {len(results)} result(s): {results}", flush=True)
+    except Exception as e:
+        print(f"{log_prefix} ERROR while processing window: {e}\n{traceback.format_exc()}", flush=True)
+        return {"error": str(e)}, 500
 
     if check_warnings(results):
         print(f"\n*** {len(results)} PROXIMITY WARNING(S) ***\n", flush=True)
@@ -39,10 +51,12 @@ def handler(request):
                 flush=True
             )
     else:
-        print("No proximity warnings.", flush=True)
+        print(f"{log_prefix} No proximity warnings.", flush=True)
 
     fetch.delete_window(window_start, window_end)
     _forward_to_sink(results, window_start, window_end, query, query_name, return_type)
+
+    print(f"{log_prefix} Done.", flush=True)
 
     return {
         "results": results,
@@ -58,8 +72,9 @@ def check_warnings(results):
 
 
 def _forward_to_sink(results, window_start, window_end, query, query_name, return_type):
+    log_prefix = f"[Worker:{query_name}]"
     if not DATA_SINK_URL:
-        print("DATA_SINK_URL not set, skipping data sink.", flush=True)
+        print(f"{log_prefix} DATA_SINK_URL not set, skipping data sink.", flush=True)
         return
     payload = json.dumps({
         "results": results,
@@ -72,9 +87,9 @@ def _forward_to_sink(results, window_start, window_end, query, query_name, retur
     req = urllib.request.Request(DATA_SINK_URL, data=payload, headers={"Content-Type": "application/json"})
     try:
         urllib.request.urlopen(req, timeout=10)
-        print("Forwarded results to data sink.", flush=True)
+        print(f"{log_prefix} Forwarded results to data sink.", flush=True)
     except urllib.error.URLError as e:
-        print(f"Failed to forward to data sink: {e}", flush=True)
+        print(f"{log_prefix} Failed to forward to data sink: {e}", flush=True)
 
 
 if __name__ == "__main__":

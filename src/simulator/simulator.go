@@ -45,9 +45,11 @@ func (s *Simulator) Run(ctx context.Context) {
 	simulationStartReal := time.Now()
 	var firstTimestampCSV time.Time
 	var initialized bool
-	const scaleFactor = 60.0
+	const scaleFactor = 96.0
+	var publishedCount int
 
-	// Append each row into slice
+	log.Printf("[Sim] Starting simulation, scaleFactor=%.1f", scaleFactor)
+
 	for {
 		row, err := reader.Read()
 		if err != nil {
@@ -61,7 +63,7 @@ func (s *Simulator) Run(ctx context.Context) {
 
 		currentTimeCSV, err := time.Parse("02/01/2006 15:04:05", record["# Timestamp"])
 		if err != nil {
-			log.Printf("[SIMULATOR] Error: Could not parse timestamp '%s' in row: %v", record["Timestamp"], err)
+			log.Printf("[SIMULATOR] Error: Could not parse timestamp '%s' in row: %v", record["# Timestamp"], err)
 			continue
 		}
 
@@ -74,20 +76,36 @@ func (s *Simulator) Run(ctx context.Context) {
 		scaledElapsedTime := time.Duration(float64(elapsedTimeCSV) / scaleFactor)
 		newTimestamp := simulationStartReal.Add(scaledElapsedTime)
 
-		log.Printf("DEBUG: send event for csv-time %s in %v", record["# Timestamp"], time.Until(newTimestamp))
+		waitTime := time.Until(newTimestamp)
 
-		record["# Timestamp"] = newTimestamp.Format("2006-01-02 15:04:05")
+		if waitTime > 5*time.Second {
+			log.Printf("[Sim] Sleeping %s until next event at %s (CSV time %s)", waitTime.Round(time.Second), newTimestamp.Format(time.RFC3339), currentTimeCSV.Format("02/01/2006 15:04:05"))
+		}
 
-		time.Sleep(time.Until(newTimestamp))
+		if waitTime > 0 {
+			time.Sleep(waitTime)
+		}
+
+		record["# Timestamp"] = newTimestamp.Format("02/01/2006 15:04:05")
 
 		messageBytes, err := json.Marshal(record)
 		if err != nil {
 			continue
 		}
-		s.topic.Publish(ctx, &pubsub.Message{Data: messageBytes})
 
+		result := s.topic.Publish(ctx, &pubsub.Message{Data: messageBytes})
+		go func() {
+			if _, err := result.Get(ctx); err != nil {
+				log.Printf("[Sim] Failed to publish message: %v", err)
+			}
+		}()
+
+		publishedCount++
+		if publishedCount%50 == 0 {
+			log.Printf("[Sim] Published %d events so far, last CSV time %s", publishedCount, currentTimeCSV.Format("02/01/2006 15:04:05"))
+		}
 	}
 	s.topic.Flush()
 
-	log.Printf("[Sim] Finished publishing all events")
+	log.Printf("[Sim] Finished publishing all events, total published: %d", publishedCount)
 }
