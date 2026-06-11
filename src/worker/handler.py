@@ -9,7 +9,6 @@ import fetch
 
 DATA_SINK_URL = os.getenv("DATA_SINK_URL")
 
-
 @functions_framework.http
 def handler(request):
     body = request.get_json(silent=True) or {}
@@ -17,21 +16,45 @@ def handler(request):
         window_start = int(body["window_start"])
         window_end = int(body["window_end"])
         query = str(body["query"])
-        query_name = body.get("query_name", "unknown")
-        return_type = body.get("return_type", "unknown")
     except (KeyError, TypeError, ValueError) as e:
         return {"error": f"Invalid payload: {e}"}, 400
 
-    print(f"Fetching records {window_start}–{window_end} from Redis...", flush=True)
+    query_name = body.get("query_name", "unknown")
+    return_type = body.get("return_type", "unknown")
+
+    print(f"Fetching window {window_start} - {window_end} from Redis...", flush=True)
     records = fetch.fetch_window(window_start, window_end)
     print(f"Loaded {len(records)} records.", flush=True)
 
     results = analytics.run(records, query)
     print(f"{len(results)} result(s).", flush=True)
 
+    if check_warnings(results):
+        print(f"\n*** {len(results)} PROXIMITY WARNING(S) ***\n", flush=True)
+        for w in results:
+            print(
+                f"  VESSEL {w['mmsi']} ({w['name']}) — {w['distance_nm']} nm from \"{w['zone_name']}\""
+                f" (threshold {w['threshold_nm']} nm)"
+                f" | sog={w['sog']} kn | status={w['navigationalStatus']} | ts={w['timestamp']}",
+                flush=True
+            )
+    else:
+        print("No proximity warnings.", flush=True)
+
+    fetch.delete_window(window_start, window_end)
     _forward_to_sink(results, window_start, window_end, query, query_name, return_type)
 
-    return {"results": results, "records_processed": len(records), "query_name": query_name, "return_type": return_type}
+    return {
+        "results": results,
+        "records_processed": len(records),
+        "query_name": query_name,
+        "return_type": return_type
+    }
+
+
+# TODO: Fill this out
+def check_warnings(results):
+    return False
 
 
 def _forward_to_sink(results, window_start, window_end, query, query_name, return_type):
