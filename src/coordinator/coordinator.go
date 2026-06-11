@@ -160,6 +160,8 @@ func (c *Coordinator) triggerWorker(ctx context.Context, windowStart time.Time, 
 			"window_start": windowStart.Unix(),
 			"window_end":   windowEnd.Unix(),
 			"query":        query.Query,
+			"query_name": query.Name,
+			"return_type": query.ReturnType,
 		}
 
 		dataBytes, _ := json.Marshal(data)

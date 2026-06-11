@@ -86,4 +86,4 @@ if __name__ == "__main__":
         content_type="application/json",
     ):
         result = handler(flask.request)
-    print(json.dumps(result if isinstance(result, dict) raise result[0], indent=2))
+    print(json.dumps(result if isinstance(result, dict) else result[0], indent=2))
