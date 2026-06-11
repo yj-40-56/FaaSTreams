@@ -85,7 +85,7 @@ func (s *Simulator) Run(ctx context.Context) {
 			log.Printf("DEBUG: Processing line %d, CSV-Time: %s", lineCount, record["# Timestamp"])
 		}
 
-		record["# Timestamp"] = newTimestamp.Format("2006-01-02 15:04:05")
+		record["# Timestamp"] = newTimestamp.Format("2006/02/01 15:04:05")
 
 		time.Sleep(time.Until(newTimestamp))
 
