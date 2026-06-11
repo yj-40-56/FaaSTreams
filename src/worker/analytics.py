@@ -1,48 +1,55 @@
 import duckdb
-
 from zones import HAZARD_ZONES
 
-_conn = duckdb.connect()
-_conn.execute("INSTALL spatial")
-_conn.execute("LOAD spatial")
-
-
 def run(records: list[dict], query: str) -> list[dict]:
-    if not records:
+    valid_records = [r for r in records if r.get("Latitude") and r.get("Longitude")]
+    if not valid_records:
+        print("No valid records with coordinates", flush=True)
         return []
 
-    _conn.execute("DROP TABLE IF EXISTS vessels")
-    _conn.execute("""
-        CREATE TABLE vessels (
-            mmsi        VARCHAR,
-            name        VARCHAR,
-            latitude    DOUBLE,
-            longitude   DOUBLE,
-            sog         DOUBLE,
-            timestamp   VARCHAR,
-            navigationalStatus VARCHAR
+    conn = duckdb.connect()
+    try:
+        conn.execute("LOAD spatial")
+    except Exception as e:
+        print(f"Warning: Could not load spatial extension: {e}", flush=True)
+
+    conn.execute("""
+        CREATE TABLE events (
+            MMSI                VARCHAR,
+            Name                VARCHAR,
+            Latitude            DOUBLE,
+            Longitude           DOUBLE,
+            SOG                 DOUBLE,
+            Timestamp           VARCHAR,
+            NavigationalStatus  VARCHAR,
+            shipType            VARCHAR,
+            typeOfMobile        VARCHAR,
+            heading             DOUBLE,
+            destination         VARCHAR
         )
     """)
 
-    _conn.executemany(
-        "INSERT INTO vessels VALUES (?, ?, ?, ?, ?, ?, ?)",
+    conn.executemany(
+        "INSERT INTO events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
             (
                 r.get("MMSI", ""),
                 r.get("Name", ""),
-                float(r["Latitude"]) if r.get("Latitude") else None,
-                float(r["Longitude"]) if r.get("Longitude") else None,
+                float(r["Latitude"]),
+                float(r["Longitude"]),
                 float(r["SOG"]) if r.get("SOG") else None,
                 r.get("# Timestamp", ""),
                 r.get("Navigational status", ""),
+                r.get("shipType", ""),
+                r.get("typeOfMobile", ""),
+                float(r["heading"]) if r.get("heading") else None,
+                r.get("destination", ""),
             )
-            for r in records
-            if r.get("Latitude") and r.get("Longitude")
+            for r in valid_records
         ],
     )
 
-    _conn.execute("DROP TABLE IF EXISTS zones")
-    _conn.execute("""
+    conn.execute("""
         CREATE TABLE zones (
             zone_name    VARCHAR,
             geom_wkt     VARCHAR,
@@ -50,11 +57,20 @@ def run(records: list[dict], query: str) -> list[dict]:
         )
     """)
 
-    _conn.executemany(
+    conn.executemany(
         "INSERT INTO zones VALUES (?, ?, ?)",
         [(z["name"], z["wkt"], z["threshold_nm"]) for z in HAZARD_ZONES],
     )
 
-    cursor = _conn.execute(query)
-    columns = [desc[0] for desc in cursor.description]
-    return [dict(zip(columns, row)) for row in cursor.fetchall()]
+    try:
+        print(f"Executing query: {query}", flush=True)
+        cursor = conn.execute(query)
+        columns = [desc[0] for desc in cursor.description]
+        results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    except Exception as e:
+        print(f"Error executing query: {e}", flush=True)
+        raise
+    finally:
+        conn.close()
+
+    return results

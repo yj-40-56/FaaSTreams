@@ -138,6 +138,8 @@ func (c *Coordinator) handleEvent(ctx context.Context, event *Event, rawData []b
 	if event.Timestamp.After(windowEnd) {
 		windowStart := windowEnd.Add(-c.windowSize)
 		c.triggerWorker(ctx, windowStart, windowEnd)
+		cleanupUpperBound := windowEnd.Add(-2 * c.windowSize)
+		c.redisClient.ZRemRangeByScore(ctx, redisStreamKey, "-inf", strconv.FormatInt(cleanupUpperBound.Unix(), 10))
 		windowEnd = windowEnd.Add(c.windowSize)
 		c.setWindowEnd(ctx, windowEnd)
 	}
@@ -166,6 +168,8 @@ func (c *Coordinator) triggerWorker(ctx context.Context, windowStart time.Time, 
 			"window_start": windowStart.Unix(),
 			"window_end":   windowEnd.Unix(),
 			"query":        query.Query,
+			"query_name": query.Name,
+			"return_type": query.ReturnType,
 		}
 
 		dataBytes, _ := json.Marshal(data)
