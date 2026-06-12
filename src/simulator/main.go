@@ -34,9 +34,14 @@ func main() {
 			continue
 		}
 
-		topic.PublishSettings.DelayThreshold = 0
-		topic.PublishSettings.CountThreshold = 1
-		topic.PublishSettings.ByteThreshold = 1
+		topic.PublishSettings.DelayThreshold = 100 * time.Millisecond
+		topic.PublishSettings.CountThreshold = 100
+		topic.PublishSettings.ByteThreshold = 1e6
+		topic.PublishSettings.FlowControlSettings = pubsub.FlowControlSettings{
+			MaxOutstandingMessages: 1000,
+			MaxOutstandingBytes:    1e9,
+			LimitExceededBehavior:  pubsub.FlowControlBlock,
+		}
 
 		if exists {
 			log.Println("[Sim] Topic found")
