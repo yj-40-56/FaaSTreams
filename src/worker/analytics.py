@@ -29,25 +29,28 @@ def run(records: list[dict], query: str) -> list[dict]:
         )
     """)
 
-    conn.executemany(
-        "INSERT INTO events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [
-            (
-                r.get("MMSI", ""),
-                r.get("Name", ""),
-                float(r["Latitude"]),
-                float(r["Longitude"]),
-                float(r["SOG"]) if r.get("SOG") else None,
-                r.get("# Timestamp", ""),
-                r.get("Navigational status", ""),
-                r.get("shipType", ""),
-                r.get("typeOfMobile", ""),
-                float(r["heading"]) if r.get("heading") else None,
-                r.get("destination", ""),
-            )
-            for r in valid_records
-        ],
-    )
+    rows = [
+        (
+            r.get("MMSI", ""),
+            r.get("Name", ""),
+            float(r["Latitude"]),
+            float(r["Longitude"]),
+            float(r["SOG"]) if r.get("SOG") else None,
+            r.get("# Timestamp", ""),
+            r.get("Navigational status", ""),
+            r.get("shipType", ""),
+            r.get("typeOfMobile", ""),
+            float(r["heading"]) if r.get("heading") else None,
+            r.get("destination", ""),
+        )
+        for r in valid_records
+    ]
+
+    # Single multi-row INSERT instead of executemany: executemany prepares/executes
+    # one statement per row, which is far too slow and memory-heavy for large windows.
+    placeholders = ",".join(["(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"] * len(rows))
+    flat_params = [value for row in rows for value in row]
+    conn.execute(f"INSERT INTO events VALUES {placeholders}", flat_params)
 
     conn.execute("""
         CREATE TABLE zones (
