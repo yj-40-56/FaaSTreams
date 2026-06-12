@@ -1,0 +1,1 @@
+gcloud functions deploy coordinator-demo --gen2 --runtime go126 --region europe-west3 --memory 512Mi --source . --entry-point Handler --trigger-http --allow-unauthenticated --network default --subnet projects/faastreams/regions/europe-west3/subnetworks/default --env-vars-file gcloud-env-demo.yaml

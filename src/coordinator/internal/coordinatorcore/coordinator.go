@@ -1,4 +1,4 @@
-package main
+package coordinatorcore
 
 import (
 	"bytes"
@@ -11,13 +11,21 @@ import (
 	"strconv"
 	"time"
 
-	"coordinator/config"
+	"github.com/faastreams/coordinator/config"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/redis/go-redis/v9"
 )
 
-const redisStreamKey = "mod-stream"
+var redisStreamKey = getEnvDefault("REDIS_KEY", "mod-stream")
+var coordinatorKeyPrefix = getEnvDefault("COORDINATOR_KEY_PREFIX", "coordinator")
+
+func getEnvDefault(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
+}
 
 type Event struct {
 	Timestamp time.Time
@@ -97,7 +105,7 @@ func (c *Coordinator) parseEventFromMap(data map[string]string) *Event {
 
 // Retrieve current windowEnd from Redis, if not set return zero time
 func (c *Coordinator) getWindowEnd(ctx context.Context) time.Time {
-	val, err := c.redisClient.Get(ctx, "coordinator:window_end").Result()
+	val, err := c.redisClient.Get(ctx, coordinatorKeyPrefix+":window_end").Result()
 	if err != nil {
 		return time.Time{}
 	}
@@ -106,7 +114,7 @@ func (c *Coordinator) getWindowEnd(ctx context.Context) time.Time {
 }
 
 func (c *Coordinator) setWindowEnd(ctx context.Context, t time.Time) {
-	c.redisClient.Set(ctx, "coordinator:window_end", t.Unix(), 0)
+	c.redisClient.Set(ctx, coordinatorKeyPrefix+":window_end", t.Unix(), 0)
 }
 
 // Store event in Redis sorted set, where score is timestamp and member is JSON data, sorted by score
@@ -139,7 +147,7 @@ func (c *Coordinator) handleEvent(ctx context.Context, event *Event, rawData []b
 
 // TODO: Pass window_start, window_end, query
 func (c *Coordinator) triggerWorker(ctx context.Context, windowStart time.Time, windowEnd time.Time) {
-	lockKey := fmt.Sprintf("coordinator:lock:%d", windowEnd.Unix())
+	lockKey := fmt.Sprintf("%s:lock:%d", coordinatorKeyPrefix, windowEnd.Unix())
 
 	// One worker instace per window
 	locked, err := c.redisClient.SetNX(ctx, lockKey, "1", 5*time.Minute).Result()

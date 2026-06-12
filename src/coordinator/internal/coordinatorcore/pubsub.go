@@ -1,4 +1,4 @@
-package main
+package coordinatorcore
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"cloud.google.com/go/pubsub"
 )
 
-func setupPubSub(ctx context.Context) (*pubsub.Client, *pubsub.Topic, *pubsub.Subscription) {
+func SetupPubSub(ctx context.Context) (*pubsub.Client, *pubsub.Topic, *pubsub.Subscription) {
 	projectID := os.Getenv("PUBSUB_PROJECT_ID")
 	topicID := os.Getenv("PUBSUB_TOPIC_ID")
 	subscriptionID := os.Getenv("PUBSUB_SUBSCRIPTION_ID")

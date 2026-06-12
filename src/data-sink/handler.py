@@ -7,6 +7,7 @@ import functions_framework
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+REDIS_KEY = os.getenv("REDIS_KEY", "analytics-results")
 
 
 @functions_framework.http
@@ -29,7 +30,7 @@ def handler(request):
 
     r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
     score = time.time()
-    r.zadd("analytics-results", {payload: score})
+    r.zadd(REDIS_KEY, {payload: score})
 
     print(f"Stored {len(results)} results at score {score:.0f}.", flush=True)
     return {"stored": len(results)}
