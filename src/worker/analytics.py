@@ -9,6 +9,7 @@ def run(records: list[dict], query: str) -> list[dict]:
 
     conn = duckdb.connect()
     try:
+        conn.execute("INSTALL spatial")
         conn.execute("LOAD spatial")
     except Exception as e:
         print(f"Warning: Could not load spatial extension: {e}", flush=True)
