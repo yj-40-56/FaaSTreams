@@ -1,35 +1,29 @@
 queries:
-  - name: test_analytics
-    window_type: tumbling
-    window_size: 60
-    query: "SELECT COUNT(DISTINCT MMSI) as vessel_count FROM vessels"
-    return_type: aggregate
-
-  - name: hazard_zones_proximity_alerts
+  - name: vessel_count
     window_type: tumbling
     window_size: 60
     query: "SELECT COUNT(DISTINCT MMSI) as vessel_count FROM events"
     return_type: aggregate
 
-  - name: hazard_zones_proximity_alerts
+  - name: stationary_vessels
     window_type: tumbling
     window_size: 60
     query: "SELECT COUNT(*) as stationary_count FROM events WHERE NavigationalStatus IN ('At anchor', 'Moored')"
     return_type: aggregate
 
-  - name: hazard_zones_proximity_alerts
+  - name: avg_speed_by_type
     window_type: tumbling
     window_size: 60
     query: "SELECT shipType, ROUND(AVG(SOG), 2) as avg_speed FROM events WHERE SOG IS NOT NULL GROUP BY shipType ORDER BY avg_speed DESC"
     return_type: aggregate
 
-  - name: hazard_zones_proximity_alerts
+  - name: wind_exclusion_zone
     window_type: tumbling
     window_size: 60
     query: "SELECT Name, MMSI, Latitude, Longitude, SOG FROM events WHERE Latitude BETWEEN 55.5 AND 56.0 AND Longitude BETWEEN 7.5 AND 8.0 AND SOG IS NOT NULL AND SOG > 0.5"
     return_type: spatial
 
-  - name: hazard_zones_proximity_alerts
+  - name: kattegat_knn
     window_type: tumbling
     window_size: 60
     query: "SELECT Name, MMSI, Latitude, Longitude, ROUND(SQRT(POWER(Latitude - 57.25, 2) + POWER(Longitude - 10.25, 2)), 4) as approx_distance FROM events WHERE Latitude IS NOT NULL ORDER BY approx_distance LIMIT 5"
