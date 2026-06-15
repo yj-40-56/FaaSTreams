@@ -89,7 +89,7 @@ func (c *Coordinator) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	event := c.parseEventFromMap(data)
 	c.handleEvent(r.Context(), event, pushRequest.Message.Data)
 
-	w.WriteHeader(http.StatusOK)
+	// w.WriteHeader(http.StatusOK)
 }
 
 // Write sub data into Event struct
@@ -149,7 +149,7 @@ func (c *Coordinator) handleEvent(ctx context.Context, event *Event, rawData []b
 
 // TODO: Pass window_start, window_end, query
 func (c *Coordinator) triggerWorker(ctx context.Context, windowStart time.Time, windowEnd time.Time) {
-	lockKey := fmt.Sprintf("%s:lock:%d", coordinatorKeyPrefix, windowEnd.Unix())
+	lockKey := fmt.Sprintf("%s:%s:lock:%d", coordinatorKeyPrefix, c.query.Name, windowEnd.Unix())
 
 	// One worker instace per window
 	locked, err := c.redisClient.SetNX(ctx, lockKey, "1", 5*time.Minute).Result()
@@ -161,7 +161,7 @@ func (c *Coordinator) triggerWorker(ctx context.Context, windowStart time.Time, 
 	minScore := strconv.FormatInt(windowStart.Unix(), 10)
 	maxScore := strconv.FormatInt(windowEnd.Unix(), 10)
 
-	log.Printf("[Coordinator] Triggering worker for window (scores): %s - %s\n", minScore, maxScore)
+	log.Printf("[Coordinator] Triggering worker for window (scores): %s(%s) - %s(%s)\n", minScore, windowStart.Format("15:04:05"), maxScore, windowEnd.Format("15:04:05"))
 	workerURL := os.Getenv("WORKER_URL")
 
 	data := map[string]interface{}{

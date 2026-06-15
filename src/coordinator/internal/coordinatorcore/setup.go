@@ -11,7 +11,7 @@ import (
 )
 
 // SetupFromEnv builds a Coordinator wired to Redis and the first query config, all configured via env vars.
-func SetupFromEnv(ctx context.Context) *Coordinator {
+func SetupFromEnv(ctx context.Context) []*Coordinator {
 	redisHost := os.Getenv("REDIS_HOST")
 	redisPort := os.Getenv("REDIS_PORT")
 	redisAddr := redisHost + ":" + redisPort
@@ -27,7 +27,10 @@ func SetupFromEnv(ctx context.Context) *Coordinator {
 
 	queryConfig := config.LoadConfig()
 	// TODO: For testing purposes we just select the first query config add support for several later
-	selectedQuery := queryConfig.Queries[0]
-
-	return NewCoordinator(redisClient, selectedQuery)
+	// selectedQuery := queryConfig.Queries[0]
+	coordinators := make([]*Coordinator, 0, len(queryConfig.Queries))
+	for _, q := range queryConfig.Queries {
+		coordinators = append(coordinators, NewCoordinator(redisClient, q))
+	}
+	return coordinators
 }
