@@ -1,3 +1,4 @@
+import datetime
 import json
 import os
 import sys
@@ -21,12 +22,16 @@ def handler(request):
 
     query_name = body.get("query_name", "unknown")
     return_type = body.get("return_type", "unknown")
+    print(f"window_start: {window_start}, window_end: {window_end}", flush=True)
+    print(f"window_start datetime: {datetime.datetime.utcfromtimestamp(window_start)}, window_end datetime: {datetime.datetime.utcfromtimestamp(window_end)}", flush=True)
 
     print(f"Fetching window {window_start} - {window_end} from Redis...", flush=True)
     records = fetch.fetch_window(window_start, window_end)
     print(f"Loaded {len(records)} records.", flush=True)
 
     results = analytics.run(records, query)
+    print(f"analytics.run complete, {len(results)} results", flush=True)
+
     print(f"{len(results)} result(s).", flush=True)
 
     if check_warnings(results):
