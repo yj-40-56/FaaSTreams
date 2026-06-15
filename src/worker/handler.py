@@ -41,7 +41,7 @@ def handler(request):
     else:
         print("No proximity warnings.", flush=True)
 
-    fetch.delete_window(window_start, window_end)
+    # fetch.delete_window(window_start, window_end)
     _forward_to_sink(results, window_start, window_end, query, query_name, return_type)
 
     return {
