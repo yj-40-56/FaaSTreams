@@ -9,6 +9,8 @@ def run(records: list[dict], query: str) -> list[dict]:
 
     conn = duckdb.connect()
     try:
+        conn.execute("SET extension_directory='/tmp'")
+        print("Installing spatial extension...", flush=True)
         conn.execute("INSTALL spatial")
         conn.execute("LOAD spatial")
     except Exception as e:
