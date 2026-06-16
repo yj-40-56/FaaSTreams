@@ -45,7 +45,18 @@ func (s *Simulator) Run(ctx context.Context) {
 	simulationStartReal := time.Now()
 	var firstTimestampCSV time.Time
 	var initialized bool
-	const scaleFactor = 96.0
+	
+	// scaleFactor compresses CSV event timestamps so data plays back faster than it was recorded.
+	// Formula: scaleFactor = CSV duration / desired real duration
+	//
+	// | CSV data | Real time | scaleFactor |
+	// |----------|-----------|-------------|
+	// | 24h      | 24h       | 1.0         |
+	// | 24h      | 1h        | 24.0        |
+	// | 24h      | 30min     | 48.0        |
+	// | 24h      | 10min     | 144.0       |
+	// | 1h       | 1min      | 60.0        |
+	const scaleFactor = 24.0
 	var publishedCount int
 
 	log.Printf("[Sim] Starting simulation, scaleFactor=%.1f", scaleFactor)
