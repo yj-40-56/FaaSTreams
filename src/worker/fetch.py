@@ -13,7 +13,6 @@ def fetch_window(window_start: int, window_end: int) -> list[dict]:
     print(f"[Fetch] Found {len(members)} member(s) in '{REDIS_KEY}' for {window_start}-{window_end}", flush=True)
     return [json.loads(m) for m in members]
 
-# TODO: to remove
 def delete_window(window_start: int, window_end: int) -> None:
     r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
     r.zremrangebyscore(REDIS_KEY, window_start, window_end)

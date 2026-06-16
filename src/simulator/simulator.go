@@ -61,11 +61,18 @@ func (s *Simulator) Run(ctx context.Context) {
 
 	log.Printf("[Sim] Starting simulation, scaleFactor=%.1f", scaleFactor)
 
+	lineCount := 0
 	for {
 		row, err := reader.Read()
 		if err != nil {
+			if err.Error() == "EOF" {
+				log.Printf("[Sim] Finished: Reached end of file. Total lines: %d", lineCount)
+			} else {
+				log.Printf("[Sim] ERROR: Reader stopped at line %d: %v", lineCount, err)
+			}
 			break
 		}
+		lineCount++
 
 		record := make(map[string]string)
 		for i := 0; i < len(csvHeaders); i++ {
@@ -93,6 +100,10 @@ func (s *Simulator) Run(ctx context.Context) {
 			log.Printf("[Sim] Sleeping %s until next event at %s (CSV time %s)", waitTime.Round(time.Second), newTimestamp.Format(time.RFC3339), currentTimeCSV.Format("02/01/2006 15:04:05"))
 		}
 
+		if lineCount%1000 == 0 {
+			log.Printf("[Sim] Processing line %d, CSV-Time: %s", lineCount, record["# Timestamp"])
+		}
+
 		if waitTime > 0 {
 			time.Sleep(waitTime)
 		}
@@ -101,6 +112,7 @@ func (s *Simulator) Run(ctx context.Context) {
 
 		messageBytes, err := json.Marshal(record)
 		if err != nil {
+			log.Printf("[SIMULATOR] JSON error at line %d: %v", lineCount, err)
 			continue
 		}
 
