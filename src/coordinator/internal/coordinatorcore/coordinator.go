@@ -35,18 +35,20 @@ type Event struct {
 // TODO: Currently only supports tumbling windows, add support for other window types
 // Coordinator listens to Pub/Sub messages, extracts event data and stores it in Redis sorted set
 type Coordinator struct {
-	redisClient *redis.Client
-	windowSize  time.Duration
-	queryConfig config.QueryConfig
+	redisClient  *redis.Client
+	windowSize   time.Duration
+	query        config.Query
+	windowEndKey string
 }
 
-func NewCoordinator(redisClient *redis.Client, queryConfig config.QueryConfig) *Coordinator {
-	windowSize := time.Duration(queryConfig.WindowSizeInSeconds) * time.Second
+func NewCoordinator(redisClient *redis.Client, queryConfig config.Query) *Coordinator {
+	windowSize := time.Duration(queryConfig.WindowSize) * time.Second
 
 	coordinator := &Coordinator{
-		redisClient: redisClient,
-		windowSize:  windowSize,
-		queryConfig: queryConfig,
+		redisClient:  redisClient,
+		windowSize:   windowSize,
+		query:        queryConfig,
+		windowEndKey: fmt.Sprintf("%s:%s:window_end", coordinatorKeyPrefix, queryConfig.Name),
 	}
 
 	return coordinator
@@ -87,7 +89,7 @@ func (c *Coordinator) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	event := c.parseEventFromMap(data)
 	c.handleEvent(r.Context(), event, pushRequest.Message.Data)
 
-	w.WriteHeader(http.StatusOK)
+	// w.WriteHeader(http.StatusOK)
 }
 
 // Write sub data into Event struct
@@ -105,7 +107,7 @@ func (c *Coordinator) parseEventFromMap(data map[string]string) *Event {
 
 // Retrieve current windowEnd from Redis, if not set return zero time
 func (c *Coordinator) getWindowEnd(ctx context.Context) time.Time {
-	val, err := c.redisClient.Get(ctx, coordinatorKeyPrefix+":window_end").Result()
+	val, err := c.redisClient.Get(ctx, c.windowEndKey).Result()
 	if err != nil {
 		return time.Time{}
 	}
@@ -114,7 +116,7 @@ func (c *Coordinator) getWindowEnd(ctx context.Context) time.Time {
 }
 
 func (c *Coordinator) setWindowEnd(ctx context.Context, t time.Time) {
-	c.redisClient.Set(ctx, coordinatorKeyPrefix+":window_end", t.Unix(), 0)
+	c.redisClient.Set(ctx, c.windowEndKey, t.Unix(), 0)
 }
 
 // Store event in Redis sorted set, where score is timestamp and member is JSON data, sorted by score
@@ -123,7 +125,7 @@ func (c *Coordinator) handleEvent(ctx context.Context, event *Event, rawData []b
 	if windowEnd.IsZero() {
 		windowEnd = event.Timestamp.Add(c.windowSize)
 		c.setWindowEnd(ctx, windowEnd)
-		log.Printf("[Coordinator] First window ends at: %s\n", windowEnd.Format("15:04:05"))
+		log.Printf("[Coordinator:%s] First window ends at: %s\n", c.query.Name, windowEnd.Format("15:04:05"))
 	}
 
 	score := float64(event.Timestamp.Unix())
@@ -147,7 +149,7 @@ func (c *Coordinator) handleEvent(ctx context.Context, event *Event, rawData []b
 
 // TODO: Pass window_start, window_end, query
 func (c *Coordinator) triggerWorker(ctx context.Context, windowStart time.Time, windowEnd time.Time) {
-	lockKey := fmt.Sprintf("%s:lock:%d", coordinatorKeyPrefix, windowEnd.Unix())
+	lockKey := fmt.Sprintf("%s:%s:lock:%d", coordinatorKeyPrefix, c.query.Name, windowEnd.Unix())
 
 	// One worker instace per window
 	locked, err := c.redisClient.SetNX(ctx, lockKey, "1", 5*time.Minute).Result()
@@ -159,29 +161,26 @@ func (c *Coordinator) triggerWorker(ctx context.Context, windowStart time.Time, 
 	minScore := strconv.FormatInt(windowStart.Unix(), 10)
 	maxScore := strconv.FormatInt(windowEnd.Unix(), 10)
 
-	log.Printf("[Coordinator] Triggering worker for window (scores): %s - %s\n", minScore, maxScore)
+	log.Printf("[Coordinator] Triggering worker for window (scores): %s(%s) - %s(%s)\n", minScore, windowStart.Format("15:04:05"), maxScore, windowEnd.Format("15:04:05"))
 	workerURL := os.Getenv("WORKER_URL")
 
-	for i := 0; i < len(c.queryConfig.SQLQueries); i++ {
-		query := c.queryConfig.SQLQueries[i]
-		data := map[string]interface{}{
-			"window_start": windowStart.Unix(),
-			"window_end":   windowEnd.Unix(),
-			"query":        query.Query,
-			"query_name": query.Name,
-			"return_type": query.ReturnType,
-		}
-
-		dataBytes, _ := json.Marshal(data)
-
-		go func() {
-			resp, err := http.Post(workerURL, "application/json", bytes.NewBuffer(dataBytes))
-			if err != nil {
-				log.Printf("[Coordinator] Failed to spawn worker for query %s: %v\n", query.Name, err)
-				return
-			}
-			defer resp.Body.Close()
-			log.Printf("[Coordinator] Worker spawned for query: %s\n", query.Name)
-		}()
+	data := map[string]interface{}{
+		"window_start": windowStart.Unix(),
+		"window_end":   windowEnd.Unix(),
+		"query":        c.query.Query,
+		"query_name":   c.query.Name,
+		"return_type":  c.query.ReturnType,
 	}
+
+	dataBytes, _ := json.Marshal(data)
+
+	go func() {
+		resp, err := http.Post(workerURL, "application/json", bytes.NewBuffer(dataBytes))
+		if err != nil {
+			log.Printf("[Coordinator:%s] Failed to spawn worker: %v\n", c.query.Name, err)
+			return
+		}
+		defer resp.Body.Close()
+		log.Printf("[Coordinator:%s] Worker spawned\n", c.query.Name)
+	}()
 }
