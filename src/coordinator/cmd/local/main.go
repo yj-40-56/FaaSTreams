@@ -12,7 +12,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	coordinator := coordinatorcore.SetupFromEnv(ctx)
+	coordinators := coordinatorcore.SetupFromEnv(ctx)
 
 	_, _, subscription := coordinatorcore.SetupPubSub(ctx)
 
@@ -23,10 +23,14 @@ func main() {
 			port = "8080"
 		}
 		log.Println("[Main] Starting HTTP server...")
-		http.Handle("/", coordinator)
+		for _, coordinator := range coordinators {
+			http.Handle("/", coordinator)
+		}
 		http.ListenAndServe(":"+port, nil)
 	} else {
 		log.Println("[Main] Starting subscription receiver...")
-		coordinator.Run(ctx, subscription)
+		for _, coordinator := range coordinators {
+			coordinator.Run(ctx, subscription)
+		}
 	}
 }
