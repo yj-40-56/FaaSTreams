@@ -1,0 +1,50 @@
+# Example queries for the COORDINATOR's config 
+#
+#   object_id, lat, lon, ts, speed, heading, object_type, status
+#
+# One example per return_type, matching the worker's table columns.
+
+queries:
+
+  # SPATIAL -- uses the optional `zones` table (see zones.yml) and the
+  # DuckDB spatial extension. Distance from each object to each zone,
+  # filtered to ones inside that zone's alert threshold.
+  - name: zone_proximity_alerts
+    return_type: spatial
+    query: >
+      SELECT e.object_id, e.lat, e.lon, e.speed, z.zone_name,
+             ROUND(ST_Distance(
+               ST_Transform(ST_Point(e.lon, e.lat), 'EPSG:4326', 'EPSG:3857'),
+               ST_Transform(ST_GeomFromText(z.geom_wkt), 'EPSG:4326', 'EPSG:3857')
+             ) / 1852.0, 2) AS distance_nm
+      FROM events e CROSS JOIN zones z
+      WHERE ROUND(ST_Distance(
+               ST_Transform(ST_Point(e.lon, e.lat), 'EPSG:4326', 'EPSG:3857'),
+               ST_Transform(ST_GeomFromText(z.geom_wkt), 'EPSG:4326', 'EPSG:3857')
+             ) / 1852.0, 2) < z.threshold_nm
+      ORDER BY distance_nm
+
+  # TEMPORAL -- report count and first/last seen timestamp per object.
+  # Deliberately avoids any numeric time-math (no EXTRACT/duration calc):
+  # `ts` is stored as a raw string, and the format coming out of Redis
+  # hasn't been confirmed yet -- MIN/MAX on strings works for sorting,
+  # but arithmetic needs a known format first. See note below.
+  - name: report_rate_per_object
+    return_type: temporal
+    query: >
+      SELECT object_id, COUNT(*) AS report_count,
+             MIN(ts) AS first_seen, MAX(ts) AS last_seen
+      FROM events
+      GROUP BY object_id
+      ORDER BY report_count DESC
+
+  # SPATIO-TEMPORAL -- ordered path per object across the window. Same
+  # caveat as above: ORDER BY ts assumes the raw timestamp string sorts
+  # correctly (true for ISO 8601, NOT true for e.g. DD/MM/YYYY).
+  - name: trajectory_path
+    return_type: spatio_temporal
+    query: >
+      SELECT object_id, lat, lon, ts
+      FROM events
+      WHERE lat IS NOT NULL
+      ORDER BY object_id, ts
