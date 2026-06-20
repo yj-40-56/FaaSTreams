@@ -15,21 +15,30 @@ from pathlib import Path
 
 import yaml
 
-import main as worker_main
-
-# Config-aware defaults matching the module under test
 REDIS_KEY = os.getenv("REDIS_KEY", "mod-stream")
 RESULTS_PATH = Path("./worker_test_results.json")
-QUERIES_FILE = Path(__file__).parent / "configurations/queries.yml"
+CONFIG_DIR = Path(__file__).parent / "configurations"
+QUERIES_FILE = CONFIG_DIR / "queries.yml"
+DOMAIN_FILE = CONFIG_DIR / "domain.yml"
+ZONES_FILE = CONFIG_DIR / "zones.json"
+
+os.environ.setdefault("DOMAIN_FIELD_FILE", str(DOMAIN_FILE))
+os.environ.setdefault("ZONES_FILE", str(ZONES_FILE))
+
+import main as worker_main
 
 
-def load_query(name: str) -> str:
+QUERY_NAMES = [
+    "zone_proximity_alerts",
+    "report_rate_per_object",
+    "trajectory_path",
+]
+
+
+def load_queries() -> dict[str, dict]:
     with open(QUERIES_FILE) as f:
         data = yaml.safe_load(f) or {}
-    for q in data.get("queries", []):
-        if q.get("name") == name:
-            return q.get("query")
-    raise KeyError(f"Query {name} not found in {QUERIES_FILE}")
+    return {q["name"]: q for q in data.get("queries", [])}
 
 
 SAMPLE_RECORDS = [
@@ -82,17 +91,7 @@ def seed_redis(records: list[dict], key: str) -> tuple[int, int]:
 
 
 def file_sink(results, window_start, window_end, query, query_name, return_type):
-    out = {
-        "results": results,
-        "window_start": window_start,
-        "window_end": window_end,
-        "query": query,
-        "query_name": query_name,
-        "return_type": return_type,
-    }
-    with open(RESULTS_PATH, "w") as f:
-        json.dump(out, f, indent=2)
-    print(f"Wrote results to {RESULTS_PATH}")
+    print(f"Query {query_name} produced {len(results)} result(s) and would forward to sink.")
 
 
 def fake_fetch_factory(records: list[dict]):
@@ -103,9 +102,8 @@ def fake_fetch_factory(records: list[dict]):
 
 
 def main():
-    # Choose a query present in queries.yml that doesn't require zones
-    query_name = "report_rate_per_object"
-    query = load_query(query_name)
+    queries = load_queries()
+    query_names = QUERY_NAMES
 
     # Try seeding Redis; if that fails, fallback to fake fetch
     try:
@@ -117,20 +115,45 @@ def main():
         fetch_fn = fake_fetch_factory(SAMPLE_RECORDS)
         window_start, window_end = 0, 9999999999
 
-    kwargs = {"sink_fn": file_sink}
-    if fetch_fn is not None:
-        kwargs["fetch_fn"] = fetch_fn
+    all_runs = []
+    for query_name in query_names:
+        query_config = queries.get(query_name)
+        if query_config is None:
+            raise KeyError(f"Query {query_name} not found in {QUERIES_FILE}")
 
-    # Run the worker orchestration, writing sink output to local file
-    result = worker_main.process(
-        window_start,
-        window_end,
-        query,
-        query_name,
-        "temporal",
-        **kwargs,
-    )
-    print(json.dumps(result, indent=2))
+        print(f"Running query {query_name} (return_type={query_config.get('return_type')})")
+        # Only pass fetch_fn override when using the in-memory fake; when
+        # fetch_fn is None the worker's default (real Redis fetch) will be
+        # used.
+        if fetch_fn is None:
+            result = worker_main.process(
+                window_start,
+                window_end,
+                query_config["query"],
+                query_name,
+                query_config.get("return_type", "unknown"),
+                sink_fn=file_sink,
+            )
+        else:
+            result = worker_main.process(
+                window_start,
+                window_end,
+                query_config["query"],
+                query_name,
+                query_config.get("return_type", "unknown"),
+                fetch_fn=fetch_fn,
+                sink_fn=file_sink,
+            )
+        all_runs.append(result)
+
+    output = {
+        "window_start": window_start,
+        "window_end": window_end,
+        "runs": all_runs,
+    }
+    RESULTS_PATH.write_text(json.dumps(output, indent=2))
+    print(f"Wrote combined results to {RESULTS_PATH}")
+    print(json.dumps(output, indent=2))
 
 
 if __name__ == "__main__":

@@ -30,4 +30,13 @@ def load_zones(path: str = ZONES_FILE) -> list[dict]:
         return []
     with open(path) as f:
         data = yaml.safe_load(f) or {}
-    return data.get("zones", [])
+
+    # Accept either a top-level mapping {"zones": [...]} (YAML form)
+    # or a top-level list (JSON form produced by some tooling).
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        return data.get("zones", [])
+
+    # Unexpected type -> return empty list
+    return []

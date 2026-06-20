@@ -1,21 +1,81 @@
 {
-  "results": [
+  "window_start": 1781957795,
+  "window_end": 1781957797,
+  "runs": [
     {
-      "object_id": "111111111",
-      "report_count": 2,
-      "first_seen": "2026-06-20T12:00:00Z",
-      "last_seen": "2026-06-20T12:00:10Z"
+      "results": [
+        {
+          "object_id": "111111111",
+          "lat": 55.6,
+          "lon": 7.6,
+          "speed": 5.2,
+          "zone_name": "wind_exclusion_zone",
+          "distance_nm": 0.0
+        },
+        {
+          "object_id": "111111111",
+          "lat": 55.61,
+          "lon": 7.61,
+          "speed": 5.0,
+          "zone_name": "wind_exclusion_zone",
+          "distance_nm": 0.0
+        },
+        {
+          "object_id": "222222222",
+          "lat": 55.62,
+          "lon": 7.62,
+          "speed": 0.0,
+          "zone_name": "wind_exclusion_zone",
+          "distance_nm": 0.0
+        }
+      ],
+      "records_processed": 3,
+      "query_name": "zone_proximity_alerts",
+      "return_type": "spatial"
     },
     {
-      "object_id": "222222222",
-      "report_count": 1,
-      "first_seen": "2026-06-20T12:00:05Z",
-      "last_seen": "2026-06-20T12:00:05Z"
+      "results": [
+        {
+          "object_id": "111111111",
+          "report_count": 2,
+          "first_seen": "2026-06-20T12:00:00Z",
+          "last_seen": "2026-06-20T12:00:10Z"
+        },
+        {
+          "object_id": "222222222",
+          "report_count": 1,
+          "first_seen": "2026-06-20T12:00:05Z",
+          "last_seen": "2026-06-20T12:00:05Z"
+        }
+      ],
+      "records_processed": 3,
+      "query_name": "report_rate_per_object",
+      "return_type": "temporal"
+    },
+    {
+      "results": [
+        {
+          "object_id": "111111111",
+          "lat": 55.6,
+          "lon": 7.6,
+          "ts": "2026-06-20T12:00:00Z"
+        },
+        {
+          "object_id": "111111111",
+          "lat": 55.61,
+          "lon": 7.61,
+          "ts": "2026-06-20T12:00:10Z"
+        },
+        {
+          "object_id": "222222222",
+          "lat": 55.62,
+          "lon": 7.62,
+          "ts": "2026-06-20T12:00:05Z"
+        }
+      ],
+      "records_processed": 3,
+      "query_name": "trajectory_path",
+      "return_type": "spatio_temporal"
     }
-  ],
-  "window_start": 1781955867,
-  "window_end": 1781955869,
-  "query": "SELECT object_id, COUNT(*) AS report_count,\n       MIN(ts) AS first_seen, MAX(ts) AS last_seen\nFROM events GROUP BY object_id ORDER BY report_count DESC\n",
-  "query_name": "report_rate_per_object",
-  "return_type": "temporal"
+  ]
 }
