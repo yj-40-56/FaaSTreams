@@ -27,6 +27,7 @@ import normalize
 import sink
 
 DOMAIN_MAPPING = domain.load_mapping()
+TS_FORMAT = domain.load_ts_format()
 ZONES = domain.load_zones()
 
 
@@ -44,7 +45,11 @@ def process(
     raw_records = fetch_fn(window_start, window_end)
     print(f"Loaded {len(raw_records)} raw record(s).", flush=True)
 
-    records = normalize.normalize_records(raw_records, DOMAIN_MAPPING)
+    records, dropped = normalize.normalize_and_validate(raw_records, DOMAIN_MAPPING, ts_format=TS_FORMAT)
+    if dropped:
+        reasons = [reason for _, reason in dropped[:5]]
+        more = f" (+{len(dropped) - 5} more)" if len(dropped) > 5 else ""
+        print(f"Dropped {len(dropped)} invalid record(s): {reasons}{more}", flush=True)
 
     results = run_fn(records, query, zones=ZONES)
     print(f"Query produced {len(results)} result(s).", flush=True)
@@ -54,6 +59,7 @@ def process(
     return {
         "results": results,
         "records_processed": len(records),
+        "records_dropped": len(dropped),
         "query_name": query_name,
         "return_type": return_type,
     }

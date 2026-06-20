@@ -7,8 +7,19 @@ return rows.
 
 This is generalized MOD schema
 """
+"""
+analytics.py
+
+Same shape as the original: build a DuckDB table from the window's
+records, optionally attach a zones reference table, run the given SQL,
+return rows. The only real change is the table schema -- it's now the
+canonical MOD schema instead of AIS-specific columns, so the SQL the
+coordinator sends can target object_id/lat/lon/ts/speed/heading/
+object_type/status regardless of which domain's data is flowing through.
+"""
 
 import duckdb
+from datetime import date, datetime, time
 
 EVENTS_SCHEMA = """
     CREATE TABLE events (
@@ -93,9 +104,19 @@ def run(records: list[dict], query: str, zones: list[dict] | None = None) -> lis
         print(f"Executing query: {query}", flush=True)
         cursor = conn.execute(query)
         columns = [desc[0] for desc in cursor.description]
-        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+        return [_json_safe_row(dict(zip(columns, row))) for row in cursor.fetchall()]
     except Exception as exc:
         print(f"Error executing query: {exc}", flush=True)
         raise
     finally:
         conn.close()
+
+
+def _json_safe_row(row: dict) -> dict:
+    return {key: _json_safe_value(value) for key, value in row.items()}
+
+
+def _json_safe_value(value):
+    if isinstance(value, (datetime, date, time)):
+        return value.isoformat()
+    return value

@@ -2,7 +2,15 @@
 test_local.py
 
 Seed Redis (if available) with a small set of raw records and run the
-worker-version-2 orchestration (`main.process`) against that window.
+worker orchestration (`main.process`) against EVERY query defined in
+configurations/queries.yml.
+
+Query names are read from the file dynamically rather than hardcoded --
+add or rename a query in queries.yml and this script tests it
+automatically next run, with nothing here to keep in sync.
+
+Each query runs independently: a failure in one doesn't stop the rest
+from being tested, and a summary at the end shows which passed/failed.
 
 Usage:
   python test_local.py
@@ -26,13 +34,6 @@ os.environ.setdefault("DOMAIN_FIELD_FILE", str(DOMAIN_FILE))
 os.environ.setdefault("ZONES_FILE", str(ZONES_FILE))
 
 import main as worker_main
-
-
-QUERY_NAMES = [
-    "zone_proximity_alerts",
-    "report_rate_per_object",
-    "trajectory_path",
-]
 
 
 def load_queries() -> dict[str, dict]:
@@ -91,7 +92,7 @@ def seed_redis(records: list[dict], key: str) -> tuple[int, int]:
 
 
 def file_sink(results, window_start, window_end, query, query_name, return_type):
-    print(f"Query {query_name} produced {len(results)} result(s) and would forward to sink.")
+    print(f"  -> would forward {len(results)} result(s) to sink")
 
 
 def fake_fetch_factory(records: list[dict]):
@@ -103,7 +104,9 @@ def fake_fetch_factory(records: list[dict]):
 
 def main():
     queries = load_queries()
-    query_names = QUERY_NAMES
+    if not queries:
+        raise RuntimeError(f"No queries found in {QUERIES_FILE}")
+    query_names = list(queries.keys())  # test everything currently defined, not a fixed subset
 
     # Try seeding Redis; if that fails, fallback to fake fetch
     try:
@@ -115,45 +118,55 @@ def main():
         fetch_fn = fake_fetch_factory(SAMPLE_RECORDS)
         window_start, window_end = 0, 9999999999
 
-    all_runs = []
-    for query_name in query_names:
-        query_config = queries.get(query_name)
-        if query_config is None:
-            raise KeyError(f"Query {query_name} not found in {QUERIES_FILE}")
+    print(f"\nTesting {len(query_names)} quer{'y' if len(query_names) == 1 else 'ies'}: {query_names}\n")
 
-        print(f"Running query {query_name} (return_type={query_config.get('return_type')})")
-        # Only pass fetch_fn override when using the in-memory fake; when
-        # fetch_fn is None the worker's default (real Redis fetch) will be
-        # used.
-        if fetch_fn is None:
+    all_runs = []
+    succeeded, failed = [], []
+
+    for query_name in query_names:
+        query_config = queries[query_name]
+        return_type = query_config.get("return_type", "unknown")
+        print(f"--- {query_name} ({return_type}) ---")
+
+        kwargs = {"sink_fn": file_sink}
+        if fetch_fn is not None:
+            kwargs["fetch_fn"] = fetch_fn
+
+        try:
             result = worker_main.process(
                 window_start,
                 window_end,
                 query_config["query"],
                 query_name,
-                query_config.get("return_type", "unknown"),
-                sink_fn=file_sink,
+                return_type,
+                **kwargs,
             )
-        else:
-            result = worker_main.process(
-                window_start,
-                window_end,
-                query_config["query"],
-                query_name,
-                query_config.get("return_type", "unknown"),
-                fetch_fn=fetch_fn,
-                sink_fn=file_sink,
-            )
-        all_runs.append(result)
+            print(f"  -> {len(result['results'])} result(s), "
+                  f"{result.get('records_dropped', 0)} record(s) dropped")
+            all_runs.append({"query_name": query_name, "status": "ok", **result})
+            succeeded.append(query_name)
+        except Exception as exc:
+            print(f"  -> FAILED: {exc}")
+            all_runs.append({
+                "query_name": query_name, "status": "error",
+                "error": str(exc), "return_type": return_type,
+            })
+            failed.append(query_name)
+        print()
 
     output = {
         "window_start": window_start,
         "window_end": window_end,
         "runs": all_runs,
     }
-    RESULTS_PATH.write_text(json.dumps(output, indent=2))
+    RESULTS_PATH.write_text(json.dumps(output, indent=2, default=str))
     print(f"Wrote combined results to {RESULTS_PATH}")
-    print(json.dumps(output, indent=2))
+
+    print(f"\n{'=' * 60}")
+    print(f"SUMMARY: {len(succeeded)}/{len(query_names)} succeeded")
+    if failed:
+        print(f"FAILED: {failed}")
+    print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":
