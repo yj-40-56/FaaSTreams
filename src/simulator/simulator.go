@@ -13,14 +13,16 @@ import (
 
 // Simulator reads events from a CSV file and published them to a Pub/sub topic, used for local testing
 type Simulator struct {
-	topic   *pubsub.Topic
-	csvPath string
+	topic      *pubsub.Topic
+	csvPath    string
+	sourceName string
 }
 
 func NewSimulator(topic *pubsub.Topic, csvPath string) *Simulator {
 	return &Simulator{
-		topic:   topic,
-		csvPath: csvPath,
+		topic:      topic,
+		csvPath:    csvPath,
+		sourceName: os.Getenv("SOURCE_NAME"),
 	}
 }
 
@@ -45,7 +47,7 @@ func (s *Simulator) Run(ctx context.Context) {
 	simulationStartReal := time.Now()
 	var firstTimestampCSV time.Time
 	var initialized bool
-	
+
 	// scaleFactor compresses CSV event timestamps so data plays back faster than it was recorded.
 	// Formula: scaleFactor = CSV duration / desired real duration
 	//
@@ -79,9 +81,13 @@ func (s *Simulator) Run(ctx context.Context) {
 			record[csvHeaders[i]] = row[i]
 		}
 
-		currentTimeCSV, err := time.Parse("02/01/2006 15:04:05", record["# Timestamp"])
+		timestampStr := "Timestamp"
+		if s.sourceName == "ais_data_v1" {
+			timestampStr = "# Timestamp"
+		}
+		currentTimeCSV, err := time.Parse("02/01/2006 15:04:05", record[timestampStr])
 		if err != nil {
-			log.Printf("[SIMULATOR] Error: Could not parse timestamp '%s' in row: %v", record["# Timestamp"], err)
+			log.Printf("[SIMULATOR] Error: Could not parse timestamp '%s' in row: %v", record[timestampStr], err)
 			continue
 		}
 
@@ -101,15 +107,14 @@ func (s *Simulator) Run(ctx context.Context) {
 		}
 
 		if lineCount%1000 == 0 {
-			log.Printf("[Sim] Processing line %d, CSV-Time: %s", lineCount, record["# Timestamp"])
+			log.Printf("DEBUG: Processing line %d, CSV-Time: %s", lineCount, record[timestampStr])
 		}
 
-		if waitTime > 0 {
-			time.Sleep(waitTime)
-		}
+		record[timestampStr] = newTimestamp.Format("02/01/2006 15:04:05")
 
-		record["# Timestamp"] = newTimestamp.Format("02/01/2006 15:04:05")
+		time.Sleep(time.Until(newTimestamp))
 
+		record["_source"] = s.sourceName
 		messageBytes, err := json.Marshal(record)
 		if err != nil {
 			log.Printf("[SIMULATOR] JSON error at line %d: %v", lineCount, err)
