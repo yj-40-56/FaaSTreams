@@ -1,3 +1,17 @@
+sources:
+  - name: ais_data_v1
+    description: "AIS data source providing real-time vessel information including position, speed, and navigational status."
+    ID: MMSI
+    Timestamp: "# Timestamp"
+    Latitude: "Latitude"
+    Longitude: "Longitude"
+  - name: bvg_data_v1
+    description: "BVG data source providing real-time public transport information."
+    ID: vehicle_id
+    Timestamp: "Timestamp"
+    Latitude: "Latitude"
+    Longitude: "Longitude"
+
 queries:
   - name: vessel_count
     window_type: tumbling

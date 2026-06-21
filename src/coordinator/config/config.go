@@ -20,8 +20,19 @@ type Query struct {
 	ReturnType string `yaml:"return_type"`
 }
 
+type Source struct {
+	Name        string `yaml:"name"`
+	Version     string `yaml:"version"`
+	Description string `yaml:"description"`
+	ID          string `yaml:"ID"`
+	Timestamp   string `yaml:"Timestamp"`
+	Latitude    string `yaml:"Latitude"`
+	Longitude   string `yaml:"Longitude"`
+}
+
 type Config struct {
-	Queries []Query `yaml:"queries"`
+	Queries []Query  `yaml:"queries"`
+	Sources []Source `yaml:"sources"`
 }
 
 // LoadConfig reads the query/window configuration bundled into the binary via go:embed.
