@@ -19,12 +19,15 @@ def handler(request):
         window_start = int(body["window_start"])
         window_end = int(body["window_end"])
         query = str(body["query"])
+        query_name = str(body["query_name"])
+        return_type = str(body["return_type"])
+        schema = dict(body["schema"])
     except (KeyError, TypeError, ValueError) as e:
         print(f"[Worker] Invalid payload: {e} | body={body}", flush=True)
         return {"error": f"Invalid payload: {e}"}, 400
 
-    query_name = body.get("query_name", "unknown")
-    return_type = body.get("return_type", "unknown")
+    query = specify_query(query, schema)
+
     log_prefix = f"[Worker:{query_name}]"
 
     start_human = time.strftime("%H:%M:%S", time.gmtime(window_start))
@@ -91,6 +94,13 @@ def _forward_to_sink(results, window_start, window_end, query, query_name, retur
         print(f"{log_prefix} Forwarded results to data sink.", flush=True)
     except urllib.error.URLError as e:
         print(f"{log_prefix} Failed to forward to data sink: {e}", flush=True)
+
+def specify_query(query, schema):
+    return query.replace("id", schema.get("id", "MMSI")) \
+            .replace("timestamp", schema.get("timestamp", "# Timestamp")) \
+            .replace("latitude", schema.get("latitude", "Latitude")) \
+            .replace("longitude", schema.get("longitude", "Longitude"))
+
 
 
 if __name__ == "__main__":
