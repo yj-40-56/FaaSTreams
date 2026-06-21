@@ -20,8 +20,9 @@ type Simulator struct {
 
 func NewSimulator(topic *pubsub.Topic, csvPath string) *Simulator {
 	return &Simulator{
-		topic:      topic,
-		csvPath:    csvPath,
+		topic:   topic,
+		csvPath: csvPath,
+		// add env var in terminal when running, e.g. SOURCE_NAME=ais_data_v1 go run main.go
 		sourceName: os.Getenv("SOURCE_NAME"),
 	}
 }
