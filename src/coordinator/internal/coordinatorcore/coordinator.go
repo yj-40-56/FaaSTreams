@@ -30,6 +30,7 @@ func getEnvDefault(key, fallback string) string {
 type Event struct {
 	Timestamp time.Time
 	Raw       map[string]string
+	Source    config.Source
 }
 
 // TODO: Currently only supports tumbling windows, add support for other window types
@@ -39,9 +40,10 @@ type Coordinator struct {
 	windowSize   time.Duration
 	query        config.Query
 	windowEndKey string
+	sources      []config.Source
 }
 
-func NewCoordinator(redisClient *redis.Client, queryConfig config.Query) *Coordinator {
+func NewCoordinator(redisClient *redis.Client, queryConfig config.Query, sources []config.Source) *Coordinator {
 	windowSize := time.Duration(queryConfig.WindowSize) * time.Second
 
 	coordinator := &Coordinator{
@@ -49,6 +51,7 @@ func NewCoordinator(redisClient *redis.Client, queryConfig config.Query) *Coordi
 		windowSize:   windowSize,
 		query:        queryConfig,
 		windowEndKey: fmt.Sprintf("%s:%s:window_end", coordinatorKeyPrefix, queryConfig.Name),
+		sources:      sources,
 	}
 
 	return coordinator
@@ -94,7 +97,22 @@ func (c *Coordinator) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // Write sub data into Event struct
 func (c *Coordinator) parseEventFromMap(data map[string]string) *Event {
-	timestamp, err := time.Parse("02/01/2006 15:04:05", data["# Timestamp"])
+	sourceName := data["_source"]
+	var timestampCol string
+	var eventSource config.Source
+	for _, s := range c.sources {
+		if s.Name == sourceName {
+			timestampCol = s.Timestamp
+			eventSource = s
+			break
+		}
+	}
+	if timestampCol == "" {
+		log.Printf("[Coordinator:%s] Unknown source: %s\n", c.query.Name, sourceName)
+		return nil
+	}
+
+	timestamp, err := time.Parse("02/01/2006 15:04:05", data[timestampCol])
 	if err != nil {
 		return nil
 	}
@@ -102,6 +120,7 @@ func (c *Coordinator) parseEventFromMap(data map[string]string) *Event {
 	return &Event{
 		Timestamp: timestamp,
 		Raw:       data,
+		Source:    eventSource,
 	}
 }
 
@@ -139,7 +158,7 @@ func (c *Coordinator) handleEvent(ctx context.Context, event *Event, rawData []b
 	// Start worker for previous window
 	if event.Timestamp.After(windowEnd) {
 		windowStart := windowEnd.Add(-c.windowSize)
-		c.triggerWorker(ctx, windowStart, windowEnd)
+		c.triggerWorker(ctx, windowStart, windowEnd, event.Source)
 		cleanupUpperBound := windowEnd.Add(-2 * c.windowSize)
 		c.redisClient.ZRemRangeByScore(ctx, redisStreamKey, "-inf", strconv.FormatInt(cleanupUpperBound.Unix(), 10))
 		windowEnd = windowEnd.Add(c.windowSize)
@@ -148,7 +167,7 @@ func (c *Coordinator) handleEvent(ctx context.Context, event *Event, rawData []b
 }
 
 // TODO: Pass window_start, window_end, query
-func (c *Coordinator) triggerWorker(ctx context.Context, windowStart time.Time, windowEnd time.Time) {
+func (c *Coordinator) triggerWorker(ctx context.Context, windowStart time.Time, windowEnd time.Time, source config.Source) {
 	lockKey := fmt.Sprintf("%s:%s:lock:%d", coordinatorKeyPrefix, c.query.Name, windowEnd.Unix())
 
 	// One worker instace per window
@@ -170,6 +189,12 @@ func (c *Coordinator) triggerWorker(ctx context.Context, windowStart time.Time, 
 		"query":        c.query.Query,
 		"query_name":   c.query.Name,
 		"return_type":  c.query.ReturnType,
+		"schema": map[string]string{
+			"id":        source.ID,
+			"timestamp": source.Timestamp,
+			"latitude":  source.Latitude,
+			"longitude": source.Longitude,
+		},
 	}
 
 	dataBytes, _ := json.Marshal(data)

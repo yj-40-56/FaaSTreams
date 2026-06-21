@@ -30,7 +30,7 @@ func SetupFromEnv(ctx context.Context) []*Coordinator {
 	// selectedQuery := queryConfig.Queries[0]
 	coordinators := make([]*Coordinator, 0, len(queryConfig.Queries))
 	for _, q := range queryConfig.Queries {
-		coordinators = append(coordinators, NewCoordinator(redisClient, q))
+		coordinators = append(coordinators, NewCoordinator(redisClient, q, queryConfig.Sources))
 	}
 	return coordinators
 }
