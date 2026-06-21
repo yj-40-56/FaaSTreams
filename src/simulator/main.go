@@ -34,9 +34,20 @@ func main() {
 			continue
 		}
 
-		topic.PublishSettings.DelayThreshold = 0
-		topic.PublishSettings.CountThreshold = 1
-		topic.PublishSettings.ByteThreshold = 1
+		// Batching: the client library accumulates calls to topic.Publish() and flushes
+		// when any threshold is reached. This reduces API calls from one-per-event to
+		// one-per-batch, enabling >20k events/s. Flush triggers on whichever fires first:
+		// 100ms elapsed, 100 messages queued, or 1MB of payload.
+		// FlowControl limits in-flight data to 1000 messages / 1GB; Block backpressures
+		// the simulator instead of dropping or erroring when the limits are exceeded.
+		topic.PublishSettings.DelayThreshold = 100 * time.Millisecond
+		topic.PublishSettings.CountThreshold = 100
+		topic.PublishSettings.ByteThreshold = 1e6
+		topic.PublishSettings.FlowControlSettings = pubsub.FlowControlSettings{
+			MaxOutstandingMessages: 1000,
+			MaxOutstandingBytes:    1e9,
+			LimitExceededBehavior:  pubsub.FlowControlBlock,
+		}
 
 		if exists {
 			log.Println("[Sim] Topic found")
