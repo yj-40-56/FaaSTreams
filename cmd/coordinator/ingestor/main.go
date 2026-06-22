@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
@@ -13,12 +14,16 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-const dataKey = "data"
+const (
+	dataKey    = "data"
+	sessionKey = "sessionKey"
+)
 
 var (
 	rdb             *redis.Client
 	timestampField  string
 	timestampLayout string
+	idField         string
 )
 
 func init() {
@@ -35,6 +40,10 @@ func init() {
 	timestampLayout = os.Getenv("TIMESTAMP_LAYOUT")
 	if timestampLayout == "" {
 		log.Fatalln("TIMESTAMP_LAYOUT is empty")
+	}
+	idField = os.Getenv("ID_FIELD")
+	if idField == "" {
+		log.Fatalln("ID_FIELD is empty")
 	}
 
 	rdb = redis.NewClient(&redis.Options{
@@ -83,6 +92,16 @@ func ingestEvent(ctx context.Context, e event.Event) error {
 		Member: string(pubSubMessage.Message.Data),
 	}).Err(); err != nil {
 		return fmt.Errorf("redis zadd failed: %w", err)
+	}
+
+	id := fmt.Sprintf("%v", fields[idField])
+	tSec := t.Unix()
+	tStr := strconv.FormatInt(tSec, 10)
+	if err := rdb.ZAdd(ctx, sessionKey+":"+id, redis.Z{
+		Score:  float64(tSec),
+		Member: tStr,
+	}).Err(); err != nil {
+		return fmt.Errorf("redis zadd session-time failed: %w", err)
 	}
 
 	return nil

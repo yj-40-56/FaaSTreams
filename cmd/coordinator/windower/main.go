@@ -24,6 +24,7 @@ const (
 	windowNextKey     = "window:next"
 	dataKey           = "data"
 	lockKey           = "lock"
+	sessionKey        = "sessionKey"
 	lateBufferSeconds = 3
 )
 
@@ -206,46 +207,6 @@ func (c *Coordinator) recordCleanup(ctx context.Context) {
 	}
 }
 
-func (c *Coordinator) handleEvent(ctx context.Context, t time.Time) error {
-
-	var wg sync.WaitGroup
-	errCh := make(chan error, len(c.config.Queries))
-
-	for _, q := range c.config.Queries {
-		wg.Add(1)
-		go func(q Query) {
-			defer wg.Done()
-
-			var err error
-			switch q.WindowType {
-			case "tumbling":
-				err = c.handleTumbling(ctx, t, q)
-			case "sliding":
-				err = c.handleSliding(ctx, t, q)
-			case "session":
-				err = c.handleSession(ctx, t, q)
-			default:
-				err = fmt.Errorf("unknown window type %q (%s)", q.WindowType, q.Name)
-			}
-			if err != nil {
-				errCh <- err
-			}
-		}(q)
-	}
-
-	wg.Wait()
-	close(errCh)
-
-	c.recordCleanup(ctx)
-
-	for err := range errCh {
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (c *Coordinator) handleTumbling(ctx context.Context, t time.Time, q Query) error {
 	lockKeyTumbling := lockKey + q.Name
 	startScore, err := c.rdb.ZScore(ctx, windowNextKey, q.Name).Result()
@@ -375,45 +336,22 @@ func (c *Coordinator) handleSliding(ctx context.Context, t time.Time, q Query) e
 
 func (c *Coordinator) handleSession(ctx context.Context, t time.Time, q Query) error {
 	id := q.Id
-	lockKeySession := lockKey + q.Name + id
-	memberStart := q.Name + ":" + id + ":start"
-	memberLast := q.Name + ":" + id + ":last"
-	startScore, errStart := c.rdb.ZScore(ctx, windowNextKey, memberStart).Result()
-	lastScore, _ := c.rdb.ZScore(ctx, windowNextKey, memberLast).Result()
-	startSec := int64(startScore)
-	lastSec := int64(lastScore)
 	const sessionGapSeconds = 300
 	gapSec := int64(sessionGapSeconds)
 
-	if errors.Is(errStart, redis.Nil) {
-		startSec := t.Unix()
-		if err := recordSetWindowStart.Run(ctx, c.rdb,
-			[]string{windowNextKey},
-			strconv.FormatInt(startSec, 10),
-			memberStart,
-		).Err(); err != nil {
-			return fmt.Errorf("redis init window start failed: %w", err)
-		}
-		if err := recordSetWindowStart.Run(ctx, c.rdb,
-			[]string{windowNextKey},
-			strconv.FormatInt(startSec, 10),
-			memberLast,
-		).Err(); err != nil {
-			return fmt.Errorf("redis init window last failed: %w", err)
-		}
-		return nil
+	lockKeySession := lockKey + q.Name + id
+	memberStart := q.Name + ":" + id + ":start"
+	timesKey := sessionKey + ":" + id
+	nowSec := t.Unix()
+
+	scores, err := c.rdb.ZRangeWithScores(ctx, timesKey, 0, -1).Result()
+
+	if err != nil {
+		return fmt.Errorf("redis zrangebyscore failed: %w", err)
 	}
 
-	tSec := t.Unix()
-
-	if tSec-lastSec <= gapSec {
-		if err := recordSetWindowStart.Run(ctx, c.rdb,
-			[]string{windowNextKey},
-			strconv.FormatInt(tSec, 10),
-			memberLast,
-		).Err(); err != nil {
-			return fmt.Errorf("redis update window last failed: %w", err)
-		}
+	if len(scores) == 0 {
+		c.rdb.ZRem(ctx, windowNextKey, memberStart)
 		return nil
 	}
 
@@ -423,30 +361,39 @@ func (c *Coordinator) handleSession(ctx context.Context, t time.Time, q Query) e
 	}
 
 	var updateErr error
-	func() {
+	func(scores []redis.Z) {
 		defer c.rdb.Del(ctx, lockKeySession)
 
-		count, _ := c.rdb.ZCount(ctx, dataKey,
-			strconv.FormatInt(startSec, 10),
-			strconv.FormatInt(lastSec, 10)).Result()
-		if count > 0 {
-			c.triggerWorker(time.Unix(startSec, 0).UTC(), time.Unix(lastSec, 0).UTC(), q, id)
+		winStart := int64(scores[0].Score)
+		winEnd := int64(scores[0].Score)
+
+		for i := 1; i < len(scores); i++ {
+			nextEvent := int64(scores[i].Score)
+			diff := nextEvent - winEnd
+			if diff <= gapSec {
+				winEnd = nextEvent
+			} else {
+				c.triggerWorker(time.Unix(winStart, 0).UTC(), time.Unix(winEnd, 0).UTC(), q, id)
+				winStart = int64(scores[i].Score)
+				winEnd = int64(scores[i].Score)
+			}
 		}
-		newStartSec := t.Unix()
+
+		diff := nowSec - winEnd
+		if diff > gapSec {
+			c.triggerWorker(time.Unix(winStart, 0).UTC(), time.Unix(winEnd, 0).UTC(), q, id)
+			c.rdb.ZRemRangeByScore(ctx, timesKey, "-inf", strconv.FormatInt(winEnd, 10))
+			c.rdb.ZRem(ctx, windowNextKey, memberStart)
+			return
+		}
 		if err := recordSetWindowStart.Run(ctx, c.rdb,
 			[]string{windowNextKey},
-			strconv.FormatInt(newStartSec, 10),
+			strconv.FormatInt(winStart, 10),
 			memberStart,
 		).Err(); err != nil {
 			updateErr = fmt.Errorf("redis set window start failed: %w", err)
 		}
-		if err := recordSetWindowStart.Run(ctx, c.rdb,
-			[]string{windowNextKey},
-			strconv.FormatInt(newStartSec, 10),
-			memberLast,
-		).Err(); err != nil {
-			updateErr = fmt.Errorf("redis set window last failed: %w", err)
-		}
-	}()
+		c.rdb.ZRemRangeByScore(ctx, timesKey, "-inf", "("+strconv.FormatInt(winStart, 10))
+	}(scores)
 	return updateErr
 }
