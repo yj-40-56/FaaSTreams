@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/faastreams/coordinator/config"
+	"github.com/faastreams/coordinator/query"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -25,7 +25,7 @@ func SetupFromEnv(ctx context.Context) []*Coordinator {
 		log.Fatalf("Redis connection failed: %v", err)
 	}
 
-	queryConfig := config.LoadConfig()
+	queryConfig := query.LoadConfig()
 	// TODO: For testing purposes we just select the first query config add support for several later
 	// selectedQuery := queryConfig.Queries[0]
 	coordinators := make([]*Coordinator, 0, len(queryConfig.Queries))

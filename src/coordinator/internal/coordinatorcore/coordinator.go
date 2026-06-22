@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/faastreams/coordinator/config"
+	"github.com/faastreams/coordinator/query"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/redis/go-redis/v9"
@@ -37,11 +37,11 @@ type Event struct {
 type Coordinator struct {
 	redisClient  *redis.Client
 	windowSize   time.Duration
-	query        config.Query
+	query        query.Query
 	windowEndKey string
 }
 
-func NewCoordinator(redisClient *redis.Client, queryConfig config.Query) *Coordinator {
+func NewCoordinator(redisClient *redis.Client, queryConfig query.Query) *Coordinator {
 	windowSize := time.Duration(queryConfig.WindowSize) * time.Second
 
 	coordinator := &Coordinator{

@@ -6,6 +6,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/faastreams/coordinator/source"
+
 	"cloud.google.com/go/pubsub"
 )
 
@@ -14,7 +16,8 @@ func main() {
 
 	projectID := os.Getenv("PUBSUB_PROJECT_ID")
 	topicID := os.Getenv("PUBSUB_TOPIC_ID")
-	csvPath := os.Getenv("CSV_PATH")
+	sourceConfigName := os.Getenv("SOURCE_CONFIG_NAME")
+	sourceConfigPath := os.Getenv("SOURCE_CONFIG_PATH")
 
 	client, err := pubsub.NewClient(ctx, projectID)
 	if err != nil {
@@ -58,6 +61,14 @@ func main() {
 	}
 
 	time.Sleep(5 * time.Second)
-	simulator := NewSimulator(topic, csvPath)
+
+	config, err := source.LoadConfig(sourceConfigPath)
+	if err != nil {
+		log.Fatalf("Error while loading source config: %v", err)
+	}
+
+	sourceConfig := config.Sources[sourceConfigName]
+
+	simulator := NewSimulator(topic, sourceConfig)
 	simulator.Run(ctx)
 }

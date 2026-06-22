@@ -1,0 +1,10 @@
+sources:
+  ais:
+    csv_path: "../../data/ais.csv"
+    csv_delimiter: ","
+    timestamp_field: "# Timestamp"
+    timestamp_format: "02/01/2006 15:04:05"
+    scale_factor: 24.0
+    id_field: "MMSI"
+    lat_field: "Latitude"
+    lon_field: "Longitude"

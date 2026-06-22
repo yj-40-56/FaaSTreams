@@ -1,4 +1,4 @@
-package config
+package query
 
 import (
 	"embed"
@@ -7,7 +7,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-//go:embed config.yaml
+//go:embed query_config.yaml
 var embeddedConfig embed.FS
 
 // A config has several Queries, each with a name, SQL query and return type (aggregate, spatial, etc.)
