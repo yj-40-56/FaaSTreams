@@ -1,0 +1,27 @@
+# Canonical field mapping for the active MOD (moving object data) domain.
+
+# normalize.py renames incoming record fields into the general names 
+# SQL handles then: object_id, lat, lon, ts, speed, heading,
+# object_type, status.
+
+object_id: MMSI
+lat: Latitude
+lon: Longitude
+ts: "# Timestamp"
+ts_format: "%d/%m/%Y %H:%M:%S"  # how to parse the raw timestamp string into duckDb format
+                                  # Leave unset if a data source already sends ISO 8601
+speed: SOG
+heading: heading
+object_type: shipType
+status: "Navigational status"
+ 
+
+# other example:
+# object_id: animalID
+# lat: lg
+# lon: bg
+# ts: "time-stamp
+# speed: SOG
+# heading: heading
+# object_type: animalSpecies
+# status: "Health Status"
