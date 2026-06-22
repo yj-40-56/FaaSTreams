@@ -8,28 +8,27 @@ import (
 	"os"
 	"time"
 
+	"github.com/faastreams/coordinator/config"
+
 	"cloud.google.com/go/pubsub"
 )
 
 // Simulator reads events from a CSV file and published them to a Pub/sub topic, used for local testing
 type Simulator struct {
-	topic      *pubsub.Topic
-	csvPath    string
-	sourceName string
+	topic  *pubsub.Topic
+	source config.Source
 }
 
-func NewSimulator(topic *pubsub.Topic, csvPath string) *Simulator {
+func NewSimulator(topic *pubsub.Topic, source config.Source) *Simulator {
 	return &Simulator{
-		topic:   topic,
-		csvPath: csvPath,
-		// add env var in terminal when running, e.g. SOURCE_NAME=ais_data_v1 go run main.go
-		sourceName: os.Getenv("SOURCE_NAME"),
+		topic:  topic,
+		source: source,
 	}
 }
 
 // Run Extract data from csv and publish each event to Pub/Sub topic
 func (s *Simulator) Run(ctx context.Context) {
-	file, err := os.Open(s.csvPath)
+	file, err := os.Open(s.source.CsvPath)
 	if err != nil {
 		log.Printf("[SIMULATOR] Failed to open CSV file: %v\n", err)
 		return
@@ -37,7 +36,9 @@ func (s *Simulator) Run(ctx context.Context) {
 	defer file.Close()
 
 	reader := csv.NewReader(file)
-	reader.Comma = ','
+	if s.source.CsvDelimiter != "" {
+		reader.Comma = rune(s.source.CsvDelimiter[0])
+	}
 	reader.LazyQuotes = true
 	csvHeaders, err := reader.Read()
 	if err != nil {
@@ -48,21 +49,9 @@ func (s *Simulator) Run(ctx context.Context) {
 	simulationStartReal := time.Now()
 	var firstTimestampCSV time.Time
 	var initialized bool
-
-	// scaleFactor compresses CSV event timestamps so data plays back faster than it was recorded.
-	// Formula: scaleFactor = CSV duration / desired real duration
-	//
-	// | CSV data | Real time | scaleFactor |
-	// |----------|-----------|-------------|
-	// | 24h      | 24h       | 1.0         |
-	// | 24h      | 1h        | 24.0        |
-	// | 24h      | 30min     | 48.0        |
-	// | 24h      | 10min     | 144.0       |
-	// | 1h       | 1min      | 60.0        |
-	const scaleFactor = 24.0
 	var publishedCount int
 
-	log.Printf("[Sim] Starting simulation, scaleFactor=%.1f", scaleFactor)
+	log.Printf("[Sim] Starting simulation, scaleFactor=%.1f", s.source.ScaleFactor)
 
 	lineCount := 0
 	for {
@@ -82,13 +71,9 @@ func (s *Simulator) Run(ctx context.Context) {
 			record[csvHeaders[i]] = row[i]
 		}
 
-		timestampStr := "Timestamp"
-		if s.sourceName == "ais_data_v1" {
-			timestampStr = "# Timestamp"
-		}
-		currentTimeCSV, err := time.Parse("02/01/2006 15:04:05", record[timestampStr])
+		currentTimeCSV, err := time.Parse(s.source.TimestampFormat, record[s.source.TimestampField])
 		if err != nil {
-			log.Printf("[SIMULATOR] Error: Could not parse timestamp '%s' in row: %v", record[timestampStr], err)
+			log.Printf("[SIMULATOR] Error: Could not parse timestamp '%s' in row: %v", record[s.source.TimestampField], err)
 			continue
 		}
 
@@ -98,24 +83,24 @@ func (s *Simulator) Run(ctx context.Context) {
 		}
 
 		elapsedTimeCSV := currentTimeCSV.Sub(firstTimestampCSV)
-		scaledElapsedTime := time.Duration(float64(elapsedTimeCSV) / scaleFactor)
+		scaledElapsedTime := time.Duration(float64(elapsedTimeCSV) / s.source.ScaleFactor)
 		newTimestamp := simulationStartReal.Add(scaledElapsedTime)
 
 		waitTime := time.Until(newTimestamp)
 
 		if waitTime > 5*time.Second {
-			log.Printf("[Sim] Sleeping %s until next event at %s (CSV time %s)", waitTime.Round(time.Second), newTimestamp.Format(time.RFC3339), currentTimeCSV.Format("02/01/2006 15:04:05"))
+			log.Printf("[Sim] Sleeping %s until next event at %s (CSV time %s)", waitTime.Round(time.Second), newTimestamp.Format(time.RFC3339), currentTimeCSV.Format(s.source.TimestampFormat))
 		}
 
 		if lineCount%1000 == 0 {
-			log.Printf("DEBUG: Processing line %d, CSV-Time: %s", lineCount, record[timestampStr])
+			log.Printf("[Sim] Processing line %d, CSV-Time: %s", lineCount, record[s.source.TimestampField])
+		}
+		if waitTime > 0 {
+			time.Sleep(waitTime)
 		}
 
-		record[timestampStr] = newTimestamp.Format("02/01/2006 15:04:05")
+		record[s.source.TimestampField] = newTimestamp.Format(s.source.TimestampFormat)
 
-		time.Sleep(time.Until(newTimestamp))
-
-		record["_source"] = s.sourceName
 		messageBytes, err := json.Marshal(record)
 		if err != nil {
 			log.Printf("[SIMULATOR] JSON error at line %d: %v", lineCount, err)
@@ -131,7 +116,7 @@ func (s *Simulator) Run(ctx context.Context) {
 
 		publishedCount++
 		if publishedCount%50 == 0 {
-			log.Printf("[Sim] Published %d events so far, last CSV time %s", publishedCount, currentTimeCSV.Format("02/01/2006 15:04:05"))
+			log.Printf("[Sim] Published %d events so far, last CSV time %s", publishedCount, currentTimeCSV.Format(s.source.TimestampFormat))
 		}
 	}
 	s.topic.Flush()

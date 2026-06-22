@@ -1,16 +1,14 @@
 sources:
-  - name: ais_data_v1
+  ais_data_v1:
     description: "AIS data source providing real-time vessel information including position, speed, and navigational status."
-    ID: MMSI
-    Timestamp: "# Timestamp"
-    Latitude: "Latitude"
-    Longitude: "Longitude"
-  - name: bvg_data_v1
-    description: "BVG data source providing real-time public transport information."
-    ID: vehicle_id
-    Timestamp: "Timestamp"
-    Latitude: "Latitude"
-    Longitude: "Longitude"
+    csv_path: "../../data/ais.csv"
+    csv_delimiter: ","
+    scale_factor: 24.0
+    id_field: "MMSI"
+    timestamp_field: "# Timestamp"
+    timestamp_format: "02/01/2006 15:04:05"
+    lat_field: "Latitude"
+    lon_field: "Longitude"
 
 queries:
   - name: vessel_count

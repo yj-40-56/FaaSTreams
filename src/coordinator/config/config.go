@@ -10,7 +10,7 @@ import (
 //go:embed config.yaml
 var embeddedConfig embed.FS
 
-// A config has several Queries, each with a name, SQL query and return type (aggregate, spatial, etc.)
+// Query A config has several Queries, each with a name, SQL query and return type (aggregate, spatial, etc.)
 // This flat structure allows for more flexible query definitions, e.g. we can easily add more window types or other parameters later without changing the config structure
 type Query struct {
 	Name       string `yaml:"name"`
@@ -20,19 +20,32 @@ type Query struct {
 	ReturnType string `yaml:"return_type"`
 }
 
+// Source scaleFactor compresses CSV event timestamps so data plays back faster than it was recorded.
+// Formula: scaleFactor = CSV duration / desired real duration
+//
+// | CSV data | Real time | scaleFactor |
+// |----------|-----------|-------------|
+// | 24h      | 24h       | 1.0         |
+// | 24h      | 1h        | 24.0        |
+// | 24h      | 30min     | 48.0        |
+// | 24h      | 10min     | 144.0       |
+// | 1h       | 1min      | 60.0        |
 type Source struct {
-	Name        string `yaml:"name"`
-	Version     string `yaml:"version"`
-	Description string `yaml:"description"`
-	ID          string `yaml:"ID"`
-	Timestamp   string `yaml:"Timestamp"`
-	Latitude    string `yaml:"Latitude"`
-	Longitude   string `yaml:"Longitude"`
+	Version         string  `yaml:"version"`
+	Description     string  `yaml:"description"`
+	CsvPath         string  `yaml:"csv_path"`
+	CsvDelimiter    string  `yaml:"csv_delimiter"`
+	ScaleFactor     float64 `yaml:"scale_factor"`
+	IDField         string  `yaml:"id_field"`
+	TimestampField  string  `yaml:"timestamp_field"`
+	TimestampFormat string  `yaml:"timestamp_format"`
+	LatField        string  `yaml:"lat_field"`
+	LonField        string  `yaml:"lon_field"`
 }
 
 type Config struct {
-	Queries []Query  `yaml:"queries"`
-	Sources []Source `yaml:"sources"`
+	Queries []Query           `yaml:"queries"`
+	Sources map[string]Source `yaml:"sources"`
 }
 
 // LoadConfig reads the query/window configuration bundled into the binary via go:embed.
@@ -43,14 +56,15 @@ func LoadConfig() Config {
 	}
 
 	var config Config
-	err = yaml.Unmarshal(file, &config)
-	if err != nil {
+	if err := yaml.Unmarshal(file, &config); err != nil {
 		log.Fatalf("[Config] Failed to parse config file: %v", err)
 	}
 
-	for i := 0; i < len(config.Queries); i++ {
-		query := config.Queries[i]
-		log.Printf("[Config] Loaded query config: %s with %s SQL queries\n", query.Name, query.ReturnType)
+	for name := range config.Sources {
+		log.Printf("[Config] Loaded source: %s", name)
+	}
+	for _, q := range config.Queries {
+		log.Printf("[Config] Loaded query: %s (%s)", q.Name, q.ReturnType)
 	}
 
 	return config
