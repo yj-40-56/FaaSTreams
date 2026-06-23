@@ -15,14 +15,16 @@ import (
 
 // Simulator reads events from a CSV file and published them to a Pub/sub topic, used for local testing
 type Simulator struct {
-	topic  *pubsub.Topic
-	source config.Source
+	topic      *pubsub.Topic
+	sourceName string
+	source     config.Source
 }
 
-func NewSimulator(topic *pubsub.Topic, source config.Source) *Simulator {
+func NewSimulator(topic *pubsub.Topic, sourceName string, source config.Source) *Simulator {
 	return &Simulator{
-		topic:  topic,
-		source: source,
+		topic:      topic,
+		sourceName: sourceName,
+		source:     source,
 	}
 }
 
@@ -101,6 +103,7 @@ func (s *Simulator) Run(ctx context.Context) {
 
 		record[s.source.TimestampField] = newTimestamp.Format(s.source.TimestampFormat)
 
+		record["_source"] = s.sourceName
 		messageBytes, err := json.Marshal(record)
 		if err != nil {
 			log.Printf("[SIMULATOR] JSON error at line %d: %v", lineCount, err)

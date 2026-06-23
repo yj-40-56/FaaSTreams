@@ -1,7 +1,6 @@
 package coordinator
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -22,8 +21,7 @@ func init() {
 func Handler(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	for _, c := range coordinators {
-		r.Body = io.NopCloser(bytes.NewReader(body))
-		c.ServeHTTP(w, r)
+		c.HandleMessage(r.Context(), body)
 	}
 	w.WriteHeader(http.StatusOK)
 }

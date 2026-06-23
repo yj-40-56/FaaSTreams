@@ -67,6 +67,6 @@ func main() {
 	}
 
 	time.Sleep(5 * time.Second)
-	simulator := NewSimulator(topic, source)
+	simulator := NewSimulator(topic, sourceName, source)
 	simulator.Run(ctx)
 }
