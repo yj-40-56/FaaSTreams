@@ -17,12 +17,12 @@ def handler(request):
         results = body["results"]
         window_start = int(body["window_start"])
         window_end = int(body["window_end"])
-        query = str(body["query"])
+        query_name = str(body.get("query_name"))
+        return_type = str(body["return_type"])
     except (KeyError, TypeError, ValueError) as e:
         print(f"[DataSink] Invalid payload: {e} | body={body}", flush=True)
         return {"error": f"Invalid payload: {e}"}, 400
 
-    query_name = body.get("query_name", "unknown")
     log_prefix = f"[DataSink:{query_name}]"
 
     start_human = time.strftime("%H:%M:%S", time.gmtime(window_start))
@@ -33,7 +33,8 @@ def handler(request):
         "results": results,
         "window_start": window_start,
         "window_end": window_end,
-        "query": query,
+        "query": query_name,
+        "return_type": return_type,
     })
 
     try:

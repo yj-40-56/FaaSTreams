@@ -17,14 +17,23 @@ def handler(request):
     body = request.get_json(silent=True) or {}
     try:
         window_start = int(body["window_start"])
-        window_end = int(body["window_end"])
-        query = str(body["query"])
+        window_end   = int(body["window_end"])
+        query_name   = str(body["query_name"])
+        source = {
+            "columns":          body["columns"],
+            "reference_tables": body.get("reference_tables", {}),
+        }
+        query_config = {
+            "query":        str(body["query"]),
+            "return_type":  str(body["return_type"]),
+            "is_alert":     bool(body.get("is_alert", False)),
+            "alert_format": str(body.get("alert_format", "")),
+            "data_source":  str(body["data_source"]),
+        }
     except (KeyError, TypeError, ValueError) as e:
         print(f"[Worker] Invalid payload: {e} | body={body}", flush=True)
         return {"error": f"Invalid payload: {e}"}, 400
 
-    query_name = body.get("query_name", "unknown")
-    return_type = body.get("return_type", "unknown")
     log_prefix = f"[Worker:{query_name}]"
 
     start_human = time.strftime("%H:%M:%S", time.gmtime(window_start))
@@ -35,27 +44,25 @@ def handler(request):
         print(f"{log_prefix} Fetching window from Redis...", flush=True)
         records = fetch.fetch_window(window_start, window_end)
         print(f"{log_prefix} Loaded {len(records)} records.", flush=True)
-
-        results = analytics.run(records, query)
+        results = analytics.run(records, query_config["query"], source)
         print(f"{log_prefix} {len(results)} result(s): {results}", flush=True)
     except Exception as e:
         print(f"{log_prefix} ERROR while processing window: {e}\n{traceback.format_exc()}", flush=True)
         return {"error": str(e)}, 500
 
-    if check_warnings(results):
-        print(f"\n*** {len(results)} PROXIMITY WARNING(S) ***\n", flush=True)
+    if query_config["is_alert"] and results:
+        fmt = query_config["alert_format"]
+        print(f"\n*** {len(results)} {query_name.upper()} WARNING(S) ***\n", flush=True)
         for w in results:
-            print(
-                f"  VESSEL {w['mmsi']} ({w['name']}) — {w['distance_nm']} nm from \"{w['zone_name']}\""
-                f" (threshold {w['threshold_nm']} nm)"
-                f" | sog={w['sog']} kn | status={w['navigationalStatus']} | ts={w['timestamp']}",
-                flush=True
-            )
+            try:
+                print(f"  {fmt.format(**w)}", flush=True)
+            except KeyError as e:
+                print(f"  {w}  (format error: missing field {e})", flush=True)
     else:
-        print(f"{log_prefix} No proximity warnings.", flush=True)
+        print(f"{log_prefix} No alerts ({len(results)} result(s)).", flush=True)
 
     # fetch.delete_window(window_start, window_end)
-    _forward_to_sink(results, window_start, window_end, query, query_name, return_type)
+    _forward_to_sink(results, window_start, window_end, query_name, query_config["return_type"])
 
     print(f"{log_prefix} Done.", flush=True)
 
@@ -63,16 +70,10 @@ def handler(request):
         "results": results,
         "records_processed": len(records),
         "query_name": query_name,
-        "return_type": return_type
+        "return_type": query_config["return_type"]
     }
 
-
-# TODO: Fill this out
-def check_warnings(results):
-    return False
-
-
-def _forward_to_sink(results, window_start, window_end, query, query_name, return_type):
+def _forward_to_sink(results, window_start, window_end, query_name, return_type):
     log_prefix = f"[Worker:{query_name}]"
     if not DATA_SINK_URL:
         print(f"{log_prefix} DATA_SINK_URL not set, skipping data sink.", flush=True)
@@ -81,7 +82,6 @@ def _forward_to_sink(results, window_start, window_end, query, query_name, retur
         "results": results,
         "window_start": window_start,
         "window_end": window_end,
-        "query": query,
         "query_name": query_name,
         "return_type": return_type,
     }).encode()
@@ -91,7 +91,6 @@ def _forward_to_sink(results, window_start, window_end, query, query_name, retur
         print(f"{log_prefix} Forwarded results to data sink.", flush=True)
     except urllib.error.URLError as e:
         print(f"{log_prefix} Failed to forward to data sink: {e}", flush=True)
-
 
 if __name__ == "__main__":
     import flask

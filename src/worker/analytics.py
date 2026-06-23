@@ -1,8 +1,13 @@
 import duckdb
 from zones import HAZARD_ZONES
 
-def run(records: list[dict], query: str) -> list[dict]:
-    valid_records = [r for r in records if r.get("Latitude") and r.get("Longitude")]
+def run(records: list[dict], query: str, source: dict) -> list[dict]:
+    columns = source["columns"]
+    required = [name for name, c in columns.items() if c.get("required")]
+    valid_records = [
+        r for r in records
+        if all(r.get(columns[f]["from_field"]) for f in required)
+    ]
     if not valid_records:
         print("No valid records with coordinates", flush=True)
         return []
@@ -16,57 +21,33 @@ def run(records: list[dict], query: str) -> list[dict]:
     except Exception as e:
         print(f"Warning: Could not load spatial extension: {e}", flush=True)
 
-    conn.execute("""
-        CREATE TABLE events (
-            MMSI                VARCHAR,
-            Name                VARCHAR,
-            Latitude            DOUBLE,
-            Longitude           DOUBLE,
-            SOG                 DOUBLE,
-            Timestamp           VARCHAR,
-            NavigationalStatus  VARCHAR,
-            shipType            VARCHAR,
-            typeOfMobile        VARCHAR,
-            heading             DOUBLE,
-            destination         VARCHAR
-        )
-    """)
+    col_defs = ", ".join(
+        f'"{name}" {c.get("type", "VARCHAR")}' for name, c in columns.items()
+    )
+    conn.execute(f"CREATE TABLE events ({col_defs})")
+
+    def cast(value, sql_type):
+        if value is None or value == "":
+            return None
+        return float(value) if sql_type == "DOUBLE" else str(value)
 
     rows = [
-        (
-            r.get("MMSI", ""),
-            r.get("Name", ""),
-            float(r["Latitude"]),
-            float(r["Longitude"]),
-            float(r["SOG"]) if r.get("SOG") else None,
-            r.get("# Timestamp", ""),
-            r.get("Navigational status", ""),
-            r.get("shipType", ""),
-            r.get("typeOfMobile", ""),
-            float(r["heading"]) if r.get("heading") else None,
-            r.get("destination", ""),
+        tuple(
+            cast(r.get(c["from_field"]), c.get("type", "VARCHAR"))
+            for c in columns.values()
         )
         for r in valid_records
     ]
+    placeholders = ",".join([f"({', '.join(['?'] * len(columns))})"] * len(rows))
+    conn.execute(f"INSERT INTO events VALUES {placeholders}", [v for row in rows for v in row])
 
-    # Single multi-row INSERT instead of executemany: executemany prepares/executes
-    # one statement per row, which is far too slow and memory-heavy for large windows.
-    placeholders = ",".join(["(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"] * len(rows))
-    flat_params = [value for row in rows for value in row]
-    conn.execute(f"INSERT INTO events VALUES {placeholders}", flat_params)
-
-    conn.execute("""
-        CREATE TABLE zones (
-            zone_name    VARCHAR,
-            geom_wkt     VARCHAR,
-            threshold_nm DOUBLE
+    for ref_name, ref in source.get("reference_tables", {}).items():
+        col_defs = ", ".join(f"{col} {typ}" for col, typ in ref["columns"].items())
+        conn.execute(f"CREATE TABLE {ref_name} ({col_defs})")
+        conn.executemany(
+            f"INSERT INTO {ref_name} VALUES ({', '.join(['?'] * len(ref['columns']))})",
+            [tuple(row[col] for col in ref["columns"]) for row in ref["rows"]],
         )
-    """)
-
-    conn.executemany(
-        "INSERT INTO zones VALUES (?, ?, ?)",
-        [(z["name"], z["wkt"], z["threshold_nm"]) for z in HAZARD_ZONES],
-    )
 
     try:
         print(f"Executing query: {query}", flush=True)
