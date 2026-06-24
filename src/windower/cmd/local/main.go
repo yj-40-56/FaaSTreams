@@ -1,0 +1,27 @@
+package main
+
+import (
+	"context"
+	"log"
+	"net/http"
+	"os"
+
+	"github.com/faastreams/windower/internal/windowercore"
+)
+
+func main() {
+	ctx := context.Background()
+
+	windowers := windowercore.SetupFromEnv(ctx)
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	log.Println("[Main] Starting HTTP server...")
+	for _, windower := range windowers {
+		http.Handle("/", windower)
+	}
+	http.ListenAndServe(":"+port, nil)
+}
