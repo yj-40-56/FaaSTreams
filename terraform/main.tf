@@ -3,6 +3,7 @@ locals {
   subscription_id        = "ais-stream-${var.env_name}-sub"
   redis_key              = "mod-stream-${var.env_name}"
   coordinator_key_prefix = "coordinator-${var.env_name}"
+  vpc_connector_id       = "projects/${var.project_id}/locations/${var.region}/connectors/${var.vpc_connector_name}"
 }
 
 resource "google_storage_bucket" "functions_source" {
@@ -14,10 +15,6 @@ resource "google_storage_bucket" "functions_source" {
     condition { age = 7 }
     action { type = "Delete" }
   }
-}
-
-locals {
-  vpc_connector_id = "projects/${var.project_id}/locations/${var.region}/connectors/${var.vpc_connector_name}"
 }
 
 module "pubsub" {
@@ -74,6 +71,6 @@ module "coordinator" {
   topic_id               = module.pubsub.topic_id
   subscription_id        = module.pubsub.subscription_id
   window_size            = var.window_size
-  vpc_connector          = google_vpc_access_connector.connector.id
+  vpc_connector          = local.vpc_connector_id
   source_bucket          = google_storage_bucket.functions_source.name
 }
