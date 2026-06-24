@@ -12,7 +12,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	windowers := windowercore.SetupFromEnv(ctx)
+	manager := windowercore.SetupFromEnv(ctx)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -20,8 +20,6 @@ func main() {
 	}
 
 	log.Println("[Main] Starting HTTP server...")
-	for _, windower := range windowers {
-		http.Handle("/", windower)
-	}
+	http.Handle("/", manager)
 	http.ListenAndServe(":"+port, nil)
 }

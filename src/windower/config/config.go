@@ -12,11 +12,17 @@ var embeddedConfig embed.FS
 
 // Query A config has several Queries, each with a name, SQL query and return type (aggregate, spatial, etc.)
 // This flat structure allows for more flexible query definitions, e.g. we can easily add more window types or other parameters later without changing the config structure
+//
+// WindowType selects how the windower advances this query: "tumbling" (default), "sliding"
+// (uses SlideSize as the step, falling back to WindowSize), or "session" (groups events for
+// SessionID by gaps, ignoring WindowSize/SlideSize).
 type Query struct {
 	Name        string `yaml:"name"`
 	DataSource  string `yaml:"data_source"`
 	WindowType  string `yaml:"window_type"`
 	WindowSize  int    `yaml:"window_size"`
+	SlideSize   int    `yaml:"slide_size"`
+	SessionID   string `yaml:"session_id"`
 	Query       string `yaml:"query"`
 	ReturnType  string `yaml:"return_type"`
 	IsAlert     bool   `yaml:"is_alert"`
