@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/faastreams/coordinator/config"
+	"github.com/faastreams/ingestor/config"
 
 	"cloud.google.com/go/pubsub"
 )
