@@ -1,6 +1,6 @@
 ENV ?= baseline
 
-TF = docker run --rm \
+TF = docker run --rm -it \
 	-v "$(shell pwd)/..:/workspace" \
 	-v "$(HOME)/.config/gcloud:/root/.config/gcloud:ro" \
 	-e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
@@ -17,9 +17,9 @@ plan:
 	$(TF) plan -var-file="environments/$(ENV).tfvars"
 
 apply:
-	$(TF) apply -auto-approve -var-file="environments/$(ENV).tfvars"
+	$(TF) apply -var-file="environments/$(ENV).tfvars"
 
 destroy:
-	$(TF) destroy -auto-approve -var-file="environments/$(ENV).tfvars"
+	$(TF) destroy -var-file="environments/$(ENV).tfvars"
 
 .PHONY: init validate plan apply destroy
