@@ -11,6 +11,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
 	"github.com/cloudevents/sdk-go/v2/event"
+	"github.com/mardentub/coordinator/config"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -20,10 +21,8 @@ const (
 )
 
 var (
-	rdb             *redis.Client
-	timestampField  string
-	timestampLayout string
-	idField         string
+	rdb       *redis.Client
+	appConfig config.Config
 )
 
 func init() {
@@ -33,18 +32,7 @@ func init() {
 		log.Fatalln("REDIS_URL is empty")
 	}
 
-	timestampField = os.Getenv("TIMESTAMP_FIELD")
-	if timestampField == "" {
-		log.Fatalln("TIMESTAMP_FIELD is empty")
-	}
-	timestampLayout = os.Getenv("TIMESTAMP_LAYOUT")
-	if timestampLayout == "" {
-		log.Fatalln("TIMESTAMP_LAYOUT is empty")
-	}
-	idField = os.Getenv("ID_FIELD")
-	if idField == "" {
-		log.Fatalln("ID_FIELD is empty")
-	}
+	appConfig = config.LoadConfig()
 
 	rdb = redis.NewClient(&redis.Options{
 		Addr:     redisURL,
@@ -74,6 +62,22 @@ func ingestEvent(ctx context.Context, e event.Event) error {
 	if err := json.Unmarshal(pubSubMessage.Message.Data, &fields); err != nil {
 		return fmt.Errorf("event schema error: %w", err)
 	}
+
+	sourceName, ok := fields["_source"].(string)
+	if !ok || sourceName == "" {
+		log.Printf("dropping event: missing or invalid '_source' field in event data")
+		return nil
+	}
+
+	source, exists := appConfig.Sources[sourceName]
+	if !exists {
+		log.Printf("dropping event: unknown source %q in configuration", sourceName)
+		return nil
+	}
+
+	timestampField := source.TimestampField
+	timestampLayout := source.TimestampFormat
+	idField := source.IDField
 
 	tsRaw, ok := fields[timestampField].(string)
 	if !ok {
