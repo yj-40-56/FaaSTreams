@@ -64,6 +64,23 @@ type Windower struct {
 	source      config.Source
 }
 
+// ValidateQuery rejects configs that would make handleTumbling/handleSliding loop forever
+// (window_size <= 0, or a sliding window whose effective slide_size resolves to <= 0) or that
+// are missing what handleSession needs.
+func ValidateQuery(q config.Query) error {
+	switch q.WindowType {
+	case "session":
+		if q.SessionID == "" {
+			return fmt.Errorf("session window %q missing session_id", q.Name)
+		}
+	default: // "sliding" falls back to WindowSize when SlideSize is unset, so the same check covers it
+		if q.WindowSize <= 0 {
+			return fmt.Errorf("window %q has non-positive window_size (%d)", q.Name, q.WindowSize)
+		}
+	}
+	return nil
+}
+
 func NewWindower(redisClient *redis.Client, queryConfig config.Query, sources map[string]config.Source) *Windower {
 	slideSize := time.Duration(queryConfig.SlideSize) * time.Second
 	if slideSize <= 0 {
@@ -121,6 +138,9 @@ func (w *Windower) setWindowStart(ctx context.Context, member string, startSec i
 // handleTumbling advances a tumbling window: fixed-size, non-overlapping, one trigger per window.
 func (w *Windower) handleTumbling(ctx context.Context, latest time.Time) error {
 	windowSec := int64(w.windowSize.Seconds())
+	if windowSec <= 0 {
+		return fmt.Errorf("tumbling window %q has non-positive window_size (%ds)", w.query.Name, windowSec)
+	}
 
 	startScore, err := w.redisClient.ZScore(ctx, windowNextKey, w.query.Name).Result()
 	if errors.Is(err, redis.Nil) {
@@ -155,6 +175,9 @@ func (w *Windower) handleTumbling(ctx context.Context, latest time.Time) error {
 func (w *Windower) handleSliding(ctx context.Context, latest time.Time) error {
 	windowSec := int64(w.windowSize.Seconds())
 	slideSec := int64(w.slideSize.Seconds())
+	if windowSec <= 0 || slideSec <= 0 {
+		return fmt.Errorf("sliding window %q has non-positive window_size (%ds) or slide_size (%ds)", w.query.Name, windowSec, slideSec)
+	}
 
 	startScore, err := w.redisClient.ZScore(ctx, windowNextKey, w.query.Name).Result()
 	if errors.Is(err, redis.Nil) {

@@ -29,6 +29,10 @@ func SetupFromEnv(ctx context.Context) *Manager {
 	queryConfig := config.LoadConfig()
 	windowers := make([]*Windower, 0, len(queryConfig.Queries))
 	for _, q := range queryConfig.Queries {
+		if err := ValidateQuery(q); err != nil {
+			log.Printf("[Windower] Skipping query %q: %v", q.Name, err)
+			continue
+		}
 		windowers = append(windowers, NewWindower(redisClient, q, queryConfig.Sources))
 	}
 	return NewManager(redisClient, windowers)
