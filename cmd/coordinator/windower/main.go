@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -14,10 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"cloud.google.com/go/storage"
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
+	"github.com/mardentub/coordinator/config"
 	"github.com/redis/go-redis/v9"
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -32,27 +30,14 @@ var coord *Coordinator
 
 type Coordinator struct {
 	rdb    *redis.Client
-	config *Config
+	config *config.Config
 }
 
-func NewCoordinator(rdb *redis.Client, cfg *Config) *Coordinator {
+func NewCoordinator(rdb *redis.Client, cfg *config.Config) *Coordinator {
 	return &Coordinator{
 		rdb:    rdb,
 		config: cfg,
 	}
-}
-
-type Query struct {
-	Name       string `yaml:"name"`
-	WindowType string `yaml:"window_type"`
-	WindowSize int    `yaml:"window_size"`
-	Query      string `yaml:"query"`
-	ReturnType string `yaml:"return_type"`
-	Id         string `yaml:"id"`
-}
-
-type Config struct {
-	Queries []Query `yaml:"queries"`
 }
 
 var recordSetWindowStart = redis.NewScript(`
@@ -69,43 +54,6 @@ local minStr = lo[2]
 local removed = redis.call('ZREMRANGEBYSCORE', KEYS[2], '-inf', '(' .. minStr)
 return {tonumber(minStr), removed}
 `)
-
-func readGCSFile(ctx context.Context, bucket, object string) ([]byte, error) {
-	client, err := storage.NewClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("storage.NewClient: %w", err)
-	}
-	defer client.Close()
-
-	rc, err := client.Bucket(bucket).Object(object).NewReader(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("GCS read %s/%s: %w", bucket, object, err)
-	}
-	defer rc.Close()
-
-	return io.ReadAll(rc)
-}
-
-func loadConfig(ctx context.Context) (*Config, error) {
-	bucket := os.Getenv("CONFIG_BUCKET")
-	object := os.Getenv("CONFIG_OBJECT")
-	if bucket == "" || object == "" {
-		return nil, fmt.Errorf("CONFIG_BUCKET or CONFIG_OBJECT is empty")
-	}
-	data, err := readGCSFile(ctx, bucket, object)
-	if err != nil {
-		return nil, err
-	}
-
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("yaml parse: %w", err)
-	}
-	if len(cfg.Queries) == 0 {
-		return nil, errors.New("no queries defined in config")
-	}
-	return &cfg, nil
-}
 
 func init() {
 	ctx := context.Background()
@@ -124,12 +72,9 @@ func init() {
 		log.Fatalf("Redis not reachable at %s: %v", redisURL, err)
 	}
 
-	cfg, err := loadConfig(ctx)
-	if err != nil {
-		log.Fatalf("Could not load config in init-block: %v", err)
-	}
+	cfg := config.LoadConfig()
 
-	coord = NewCoordinator(rdb, cfg)
+	coord = NewCoordinator(rdb, &cfg)
 
 	functions.HTTP("ProcessWindows", processWindows)
 }
@@ -143,7 +88,7 @@ func processWindows(w http.ResponseWriter, r *http.Request) {
 
 	for _, q := range coord.config.Queries {
 		wg.Add(1)
-		go func(q Query) {
+		go func(q config.Query) {
 			defer wg.Done()
 			var err error
 			switch q.WindowType {
@@ -175,14 +120,22 @@ func processWindows(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (c *Coordinator) triggerWorker(windowStart, windowEnd time.Time, q Query, id string) {
+func (c *Coordinator) triggerWorker(windowStart, windowEnd time.Time, q config.Query, id string) {
+
+	source, _ := c.config.Sources[q.DataSource]
+
 	data := map[string]interface{}{
-		"window_start": windowStart.Unix(),
-		"window_end":   windowEnd.Unix(),
-		"query":        q.Query,
-		"query_name":   q.Name,
-		"return_type":  q.ReturnType,
-		"id":           id,
+		"window_start":     windowStart.Unix(),
+		"window_end":       windowEnd.Unix(),
+		"query":            q.Query,
+		"query_name":       q.Name,
+		"return_type":      q.ReturnType,
+		"id":               id,
+		"is_alert":         q.IsAlert,
+		"alert_format":     q.AlertFormat,
+		"data_source":      q.DataSource,
+		"columns":          source.Columns,
+		"reference_tables": source.ReferenceTables,
 	}
 	dataBytes, _ := json.Marshal(data)
 	go func(payload []byte, name string) {
@@ -194,6 +147,7 @@ func (c *Coordinator) triggerWorker(windowStart, windowEnd time.Time, q Query, i
 			return
 		}
 		defer resp.Body.Close()
+		log.Printf("[Coordinator:%s] Worker spawned", name)
 
 	}(dataBytes, q.Name)
 }
@@ -207,7 +161,7 @@ func (c *Coordinator) recordCleanup(ctx context.Context) {
 	}
 }
 
-func (c *Coordinator) handleTumbling(ctx context.Context, t time.Time, q Query) error {
+func (c *Coordinator) handleTumbling(ctx context.Context, t time.Time, q config.Query) error {
 	lockKeyTumbling := lockKey + q.Name
 	startScore, err := c.rdb.ZScore(ctx, windowNextKey, q.Name).Result()
 	windowSec := int64(q.WindowSize)
@@ -269,7 +223,7 @@ func (c *Coordinator) handleTumbling(ctx context.Context, t time.Time, q Query) 
 	return updateErr
 }
 
-func (c *Coordinator) handleSliding(ctx context.Context, t time.Time, q Query) error {
+func (c *Coordinator) handleSliding(ctx context.Context, t time.Time, q config.Query) error {
 	lockKeySliding := lockKey + q.Name
 	startScore, err := c.rdb.ZScore(ctx, windowNextKey, q.Name).Result()
 	windowSec := int64(q.WindowSize)
@@ -334,66 +288,76 @@ func (c *Coordinator) handleSliding(ctx context.Context, t time.Time, q Query) e
 
 }
 
-func (c *Coordinator) handleSession(ctx context.Context, t time.Time, q Query) error {
-	id := q.Id
+func (c *Coordinator) handleSession(ctx context.Context, t time.Time, q config.Query) error {
 	const sessionGapSeconds = 300
 	gapSec := int64(sessionGapSeconds)
-
-	lockKeySession := lockKey + q.Name + id
-	memberStart := q.Name + ":" + id + ":start"
-	timesKey := sessionKey + ":" + id
 	nowSec := t.Unix()
 
-	scores, err := c.rdb.ZRangeWithScores(ctx, timesKey, 0, -1).Result()
-
+	keys, err := c.rdb.Keys(ctx, sessionKey+":*").Result()
 	if err != nil {
-		return fmt.Errorf("redis zrangebyscore failed: %w", err)
+		return fmt.Errorf("redis keys failed: %w", err)
 	}
 
-	if len(scores) == 0 {
-		c.rdb.ZRem(ctx, windowNextKey, memberStart)
-		return nil
-	}
+	for _, timesKey := range keys {
 
-	ok, _ := c.rdb.SetNX(ctx, lockKeySession, "locked", 2*time.Minute).Result()
-	if !ok {
-		return nil
-	}
+		id := timesKey[len(sessionKey)+1:]
 
-	var updateErr error
-	func(scores []redis.Z) {
-		defer c.rdb.Del(ctx, lockKeySession)
+		lockKeySession := lockKey + q.Name + id
+		memberStart := q.Name + ":" + id + ":start"
 
-		winStart := int64(scores[0].Score)
-		winEnd := int64(scores[0].Score)
-
-		for i := 1; i < len(scores); i++ {
-			nextEvent := int64(scores[i].Score)
-			diff := nextEvent - winEnd
-			if diff <= gapSec {
-				winEnd = nextEvent
-			} else {
-				c.triggerWorker(time.Unix(winStart, 0).UTC(), time.Unix(winEnd, 0).UTC(), q, id)
-				winStart = int64(scores[i].Score)
-				winEnd = int64(scores[i].Score)
-			}
+		scores, err := c.rdb.ZRangeWithScores(ctx, timesKey, 0, -1).Result()
+		if err != nil {
+			log.Printf("[Session] failed to get scores for id %s: %v", id, err)
+			continue
 		}
 
-		diff := nowSec - winEnd
-		if diff > gapSec {
-			c.triggerWorker(time.Unix(winStart, 0).UTC(), time.Unix(winEnd, 0).UTC(), q, id)
-			c.rdb.ZRemRangeByScore(ctx, timesKey, "-inf", strconv.FormatInt(winEnd, 10))
+		if len(scores) == 0 {
 			c.rdb.ZRem(ctx, windowNextKey, memberStart)
-			return
+			continue
 		}
-		if err := recordSetWindowStart.Run(ctx, c.rdb,
-			[]string{windowNextKey},
-			strconv.FormatInt(winStart, 10),
-			memberStart,
-		).Err(); err != nil {
-			updateErr = fmt.Errorf("redis set window start failed: %w", err)
+
+		ok, _ := c.rdb.SetNX(ctx, lockKeySession, "locked", 2*time.Minute).Result()
+		if !ok {
+			continue
 		}
-		c.rdb.ZRemRangeByScore(ctx, timesKey, "-inf", "("+strconv.FormatInt(winStart, 10))
-	}(scores)
-	return updateErr
+
+		func(scores []redis.Z, currentID, currentTimesKey, currentLockKey, currentMemberStart string) {
+			defer c.rdb.Del(ctx, currentLockKey)
+
+			winStart := int64(scores[0].Score)
+			winEnd := int64(scores[0].Score)
+
+			for i := 1; i < len(scores); i++ {
+				nextEvent := int64(scores[i].Score)
+				diff := nextEvent - winEnd
+				if diff <= gapSec {
+					winEnd = nextEvent
+				} else {
+					c.triggerWorker(time.Unix(winStart, 0).UTC(), time.Unix(winEnd, 0).UTC(), q, currentID)
+					winStart = int64(scores[i].Score)
+					winEnd = int64(scores[i].Score)
+				}
+			}
+
+			diff := nowSec - winEnd
+			if diff > gapSec {
+				c.triggerWorker(time.Unix(winStart, 0).UTC(), time.Unix(winEnd, 0).UTC(), q, currentID)
+				c.rdb.ZRemRangeByScore(ctx, currentTimesKey, "-inf", strconv.FormatInt(winEnd, 10))
+				c.rdb.ZRem(ctx, windowNextKey, currentMemberStart)
+				return
+			}
+
+			if err := recordSetWindowStart.Run(ctx, c.rdb,
+				[]string{windowNextKey},
+				strconv.FormatInt(winStart, 10),
+				currentMemberStart,
+			).Err(); err != nil {
+				log.Printf("[Session] redis set window start failed for %s: %v", currentID, err)
+			}
+
+			c.rdb.ZRemRangeByScore(ctx, currentTimesKey, "-inf", "("+strconv.FormatInt(winStart, 10))
+		}(scores, id, timesKey, lockKeySession, memberStart)
+	}
+
+	return nil
 }
