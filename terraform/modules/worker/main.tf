@@ -1,13 +1,12 @@
 data "archive_file" "source" {
   type       = "zip"
-  source_dir = "${path.root}/../src/worker-version-2"
+  source_dir = "${path.root}/../src/worker"
   excludes = [
-    "test_local.py",
-    "test_data_normalization.py",
-    "worker_test_results.json",
-    "worker_test_results_test1.json",
-    "README.md",
-    "configurations/README.md",
+    "Dockerfile",
+    "deploy.sh",
+    "deploy-demo.sh",
+    "gcloud-env.yaml",
+    "gcloud-env-demo.yaml",
   ]
   output_path = "${path.module}/worker-${var.env_name}.zip"
 }
@@ -44,12 +43,10 @@ resource "google_cloudfunctions2_function" "worker" {
     vpc_connector_egress_settings  = "PRIVATE_RANGES_ONLY"
 
     environment_variables = {
-      REDIS_HOST        = var.redis_host
-      REDIS_PORT        = var.redis_port
-      REDIS_KEY         = var.redis_key
-      DATA_SINK_URL     = var.data_sink_url
-      DOMAIN_FIELD_FILE = "configurations/domain.yml"
-      ZONES_FILE        = "configurations/zones.json"
+      REDIS_HOST    = var.redis_host
+      REDIS_PORT    = var.redis_port
+      REDIS_KEY     = var.redis_key
+      DATA_SINK_URL = var.data_sink_url
     }
   }
 }
