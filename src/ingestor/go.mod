@@ -5,6 +5,7 @@ go 1.26.2
 require (
 	cloud.google.com/go/pubsub v1.50.2
 	github.com/GoogleCloudPlatform/functions-framework-go v1.9.2
+	github.com/cloudevents/sdk-go/v2 v2.15.2
 	github.com/redis/go-redis/v9 v9.19.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -17,7 +18,6 @@ require (
 	cloud.google.com/go/iam v1.5.3 // indirect
 	cloud.google.com/go/pubsub/v2 v2.4.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/cloudevents/sdk-go/v2 v2.15.2 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
