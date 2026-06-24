@@ -11,6 +11,10 @@ resource "google_pubsub_subscription" "subscription" {
   ack_deadline_seconds       = 600
   message_retention_duration = "600s"
 
+  push_config {
+    push_endpoint = var.push_endpoint
+  }
+
   retry_policy {
     minimum_backoff = "10s"
     maximum_backoff = "600s"

@@ -22,6 +22,7 @@ module "pubsub" {
   project_id      = var.project_id
   topic_id        = local.topic_id
   subscription_id = local.subscription_id
+  push_endpoint   = module.coordinator.url
 }
 
 module "data_sink" {
@@ -68,8 +69,8 @@ module "coordinator" {
   redis_key              = local.redis_key
   coordinator_key_prefix = local.coordinator_key_prefix
   worker_url             = module.worker.url
-  topic_id               = module.pubsub.topic_id
-  subscription_id        = module.pubsub.subscription_id
+  topic_id               = local.topic_id
+  subscription_id        = local.subscription_id
   window_size            = var.window_size
   vpc_connector          = local.vpc_connector_id
   source_bucket          = google_storage_bucket.functions_source.name
