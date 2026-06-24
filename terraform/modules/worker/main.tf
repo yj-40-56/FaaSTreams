@@ -44,10 +44,12 @@ resource "google_cloudfunctions2_function" "worker" {
     vpc_connector_egress_settings  = "PRIVATE_RANGES_ONLY"
 
     environment_variables = {
-      REDIS_HOST    = var.redis_host
-      REDIS_PORT    = var.redis_port
-      REDIS_KEY     = var.redis_key
-      DATA_SINK_URL = var.data_sink_url
+      REDIS_HOST        = var.redis_host
+      REDIS_PORT        = var.redis_port
+      REDIS_KEY         = var.redis_key
+      DATA_SINK_URL     = var.data_sink_url
+      DOMAIN_FIELD_FILE = "configurations/domain.yml"
+      ZONES_FILE        = "configurations/zones.json"
     }
   }
 }
