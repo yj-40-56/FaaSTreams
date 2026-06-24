@@ -17,9 +17,9 @@ plan:
 	$(TF) plan -var-file="environments/$(ENV).tfvars"
 
 apply:
-	$(TF) apply -var-file="environments/$(ENV).tfvars"
+	$(TF) apply -auto-approve -var-file="environments/$(ENV).tfvars"
 
 destroy:
-	$(TF) destroy -var-file="environments/$(ENV).tfvars"
+	$(TF) destroy -auto-approve -var-file="environments/$(ENV).tfvars"
 
 .PHONY: init validate plan apply destroy
