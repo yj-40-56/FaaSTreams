@@ -3,10 +3,12 @@ package ingestorcore
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/faastreams/ingestor/config"
@@ -16,6 +18,7 @@ import (
 )
 
 var redisStreamKey = getEnvDefault("REDIS_KEY", "mod-stream")
+var sessionKeyPrefix = getEnvDefault("SESSION_KEY_PREFIX", "session")
 
 func getEnvDefault(key, fallback string) string {
 	if value := os.Getenv(key); value != "" {
@@ -28,6 +31,7 @@ type Event struct {
 	Timestamp  time.Time
 	Raw        map[string]string
 	SourceName string
+	ID         string
 }
 
 // Ingestor listens to Pub/Sub messages, extracts event data and stores it in a Redis sorted set,
@@ -108,14 +112,24 @@ func (i *Ingestor) parseEventFromMap(data map[string]string) *Event {
 		Timestamp:  timestamp,
 		Raw:        data,
 		SourceName: sourceName,
+		ID:         data[source.IDField],
 	}
 }
 
-// Store event in Redis sorted set, where score is timestamp and member is JSON data, sorted by score
+// Store event in Redis sorted set, where score is timestamp and member is JSON data, sorted by score.
+// Also records the event's timestamp under a per-ID sorted set so the windower can derive session
+// windows (gaps between consecutive events for the same ID) without re-parsing the raw stream.
 func (i *Ingestor) storeEvent(ctx context.Context, event *Event, rawData []byte) {
 	score := float64(event.Timestamp.Unix())
 	i.redisClient.ZAdd(ctx, redisStreamKey, redis.Z{
 		Score:  score,
 		Member: string(rawData),
 	})
+
+	if event.ID != "" {
+		i.redisClient.ZAdd(ctx, fmt.Sprintf("%s:%s", sessionKeyPrefix, event.ID), redis.Z{
+			Score:  score,
+			Member: strconv.FormatInt(event.Timestamp.Unix(), 10),
+		})
+	}
 }
