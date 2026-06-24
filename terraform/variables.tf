@@ -95,8 +95,8 @@ variable "data_sink_max_instances" {
 
 # --- VPC ---
 
-variable "vpc_connector_cidr" {
-  description = "CIDR range for the Serverless VPC Access connector (/28). Must not overlap existing VPC ranges (Redis is at 10.101.64.0/24, bastion at 10.156.0.0/20). Use different ranges when running multiple envs simultaneously."
+variable "vpc_connector_name" {
+  description = "Name of the existing Serverless VPC Access connector to use for Redis access. Shared across all environments."
   type        = string
-  default     = "10.8.0.0/28"
+  default     = "redis-eu-west3-connector"
 }

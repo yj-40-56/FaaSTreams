@@ -18,4 +18,4 @@ coordinator_max_instances = 5
 data_sink_memory        = "512Mi"
 data_sink_max_instances = 5
 
-vpc_connector_cidr = "10.10.0.0/28"
+vpc_connector_name = "redis-eu-west3-connector"

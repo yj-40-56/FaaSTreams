@@ -16,16 +16,8 @@ resource "google_storage_bucket" "functions_source" {
   }
 }
 
-# Serverless VPC Access connector — bridges Cloud Functions to the private VPC
-# where Cloud Memorystore Redis lives (10.101.64.19).
-resource "google_vpc_access_connector" "connector" {
-  name          = "faas-${var.env_name}"
-  region        = var.region
-  network       = "default"
-  ip_cidr_range = var.vpc_connector_cidr
-  min_instances = 2
-  max_instances = 3
-  machine_type  = "e2-micro"
+locals {
+  vpc_connector_id = "projects/${var.project_id}/locations/${var.region}/connectors/${var.vpc_connector_name}"
 }
 
 module "pubsub" {
@@ -45,7 +37,7 @@ module "data_sink" {
   redis_host    = var.redis_host
   redis_port    = var.redis_port
   redis_key     = "${local.redis_key}-results"
-  vpc_connector = google_vpc_access_connector.connector.id
+  vpc_connector = local.vpc_connector_id
   source_bucket = google_storage_bucket.functions_source.name
 }
 
@@ -61,7 +53,7 @@ module "worker" {
   redis_port    = var.redis_port
   redis_key     = local.redis_key
   data_sink_url = module.data_sink.url
-  vpc_connector = google_vpc_access_connector.connector.id
+  vpc_connector = local.vpc_connector_id
   source_bucket = google_storage_bucket.functions_source.name
 }
 
