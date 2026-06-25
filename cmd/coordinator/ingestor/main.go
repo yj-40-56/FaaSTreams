@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
@@ -77,7 +76,7 @@ func ingestEvent(ctx context.Context, e event.Event) error {
 
 	timestampField := source.TimestampField
 	timestampLayout := source.TimestampFormat
-	idField := source.IDField
+	/*idField := source.IDField*/
 
 	tsRaw, ok := fields[timestampField].(string)
 	if !ok {
@@ -91,22 +90,22 @@ func ingestEvent(ctx context.Context, e event.Event) error {
 		return nil
 	}
 
-	if err := rdb.ZAdd(ctx, dataKey, redis.Z{
+	if err := rdb.ZAdd(ctx, dataKey+":"+sourceName, redis.Z{
 		Score:  float64(t.Unix()),
 		Member: string(pubSubMessage.Message.Data),
 	}).Err(); err != nil {
 		return fmt.Errorf("redis zadd failed: %w", err)
 	}
 
-	id := fmt.Sprintf("%v", fields[idField])
-	tSec := t.Unix()
-	tStr := strconv.FormatInt(tSec, 10)
-	if err := rdb.ZAdd(ctx, sessionKey+":"+id, redis.Z{
-		Score:  float64(tSec),
-		Member: tStr,
-	}).Err(); err != nil {
-		return fmt.Errorf("redis zadd session-time failed: %w", err)
-	}
+	/*	id := fmt.Sprintf("%v", fields[idField])
+		tSec := t.Unix()
+		tStr := strconv.FormatInt(tSec, 10)
+		if err := rdb.ZAdd(ctx, sessionKey+":"+sourceName+":"+id, redis.Z{
+			Score:  float64(tSec),
+			Member: tStr,
+		}).Err(); err != nil {
+			return fmt.Errorf("redis zadd session-time failed: %w", err)
+		}*/
 
 	return nil
 }

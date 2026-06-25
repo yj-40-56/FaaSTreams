@@ -87,6 +87,13 @@ func processWindows(w http.ResponseWriter, r *http.Request) {
 	errCh := make(chan error, len(coord.config.Queries))
 
 	for _, q := range coord.config.Queries {
+
+		_, exists := coord.config.Sources[q.DataSource]
+		if !exists {
+			log.Printf("[Windower] Skipping query %q: source %q is not active/defined in 'sources'", q.Name, q.DataSource)
+			continue
+		}
+
 		wg.Add(1)
 		go func(q config.Query) {
 			defer wg.Done()
@@ -96,8 +103,8 @@ func processWindows(w http.ResponseWriter, r *http.Request) {
 				err = coord.handleTumbling(ctx, now, q)
 			case "sliding":
 				err = coord.handleSliding(ctx, now, q)
-			case "session":
-				err = coord.handleSession(ctx, now, q)
+			/*case "session":
+			err = coord.handleSession(ctx, now, q)*/
 			default:
 				err = fmt.Errorf("unsupported window type %q (%s)", q.WindowType, q.Name)
 			}
@@ -108,7 +115,9 @@ func processWindows(w http.ResponseWriter, r *http.Request) {
 	}
 	wg.Wait()
 	close(errCh)
-	coord.recordCleanup(ctx)
+	for sourceName := range coord.config.Sources {
+		coord.recordCleanup(ctx, sourceName)
+	}
 
 	for err := range errCh {
 		if err != nil {
@@ -152,9 +161,11 @@ func (c *Coordinator) triggerWorker(windowStart, windowEnd time.Time, q config.Q
 	}(dataBytes, q.Name)
 }
 
-func (c *Coordinator) recordCleanup(ctx context.Context) {
+func (c *Coordinator) recordCleanup(ctx context.Context, prefix string) {
+	specificDataKey := dataKey + ":" + prefix
+	specificWindowNextKey := windowNextKey + ":" + prefix
 	_, err := cleanupBelowMin.Run(ctx, c.rdb,
-		[]string{windowNextKey, dataKey},
+		[]string{specificWindowNextKey, specificDataKey},
 	).Result()
 	if err != nil {
 		log.Printf("[Cleanup] failed: %v", err)
@@ -162,14 +173,17 @@ func (c *Coordinator) recordCleanup(ctx context.Context) {
 }
 
 func (c *Coordinator) handleTumbling(ctx context.Context, t time.Time, q config.Query) error {
-	lockKeyTumbling := lockKey + q.Name
-	startScore, err := c.rdb.ZScore(ctx, windowNextKey, q.Name).Result()
+	prefix := q.DataSource
+	lockKeyTumbling := lockKey + ":" + prefix + ":" + q.Name
+	specificDataKey := dataKey + ":" + prefix
+	specificWindowNextKey := windowNextKey + ":" + prefix
+	startScore, err := c.rdb.ZScore(ctx, specificWindowNextKey, q.Name).Result()
 	windowSec := int64(q.WindowSize)
 
 	if errors.Is(err, redis.Nil) {
 		startSec := t.Unix()
 		if err := recordSetWindowStart.Run(ctx, c.rdb,
-			[]string{windowNextKey},
+			[]string{specificWindowNextKey},
 			strconv.FormatInt(startSec, 10),
 			q.Name,
 		).Err(); err != nil {
@@ -200,7 +214,7 @@ func (c *Coordinator) handleTumbling(ctx context.Context, t time.Time, q config.
 
 		for tSec > endSec {
 			winStart := endSec - windowSec
-			count, _ := c.rdb.ZCount(ctx, dataKey,
+			count, _ := c.rdb.ZCount(ctx, specificDataKey,
 				strconv.FormatInt(winStart, 10),
 				strconv.FormatInt(endSec, 10)).Result()
 			if count > 0 {
@@ -213,7 +227,7 @@ func (c *Coordinator) handleTumbling(ctx context.Context, t time.Time, q config.
 		startSec = endSec - windowSec
 
 		if err := recordSetWindowStart.Run(ctx, c.rdb,
-			[]string{windowNextKey},
+			[]string{specificWindowNextKey},
 			strconv.FormatInt(startSec, 10),
 			q.Name,
 		).Err(); err != nil {
@@ -224,8 +238,11 @@ func (c *Coordinator) handleTumbling(ctx context.Context, t time.Time, q config.
 }
 
 func (c *Coordinator) handleSliding(ctx context.Context, t time.Time, q config.Query) error {
-	lockKeySliding := lockKey + q.Name
-	startScore, err := c.rdb.ZScore(ctx, windowNextKey, q.Name).Result()
+	prefix := q.DataSource
+	lockKeySliding := lockKey + ":" + prefix + ":" + q.Name
+	specificDataKey := dataKey + ":" + prefix
+	specificWindowNextKey := windowNextKey + ":" + prefix
+	startScore, err := c.rdb.ZScore(ctx, specificWindowNextKey, q.Name).Result()
 	windowSec := int64(q.WindowSize)
 	const slideSeconds = 60
 	slideSecs := int64(slideSeconds) // int64(q.SlideInSeconds)
@@ -233,7 +250,7 @@ func (c *Coordinator) handleSliding(ctx context.Context, t time.Time, q config.Q
 	if errors.Is(err, redis.Nil) {
 		startSec := t.Unix()
 		if err := recordSetWindowStart.Run(ctx, c.rdb,
-			[]string{windowNextKey},
+			[]string{specificWindowNextKey},
 			strconv.FormatInt(startSec, 10),
 			q.Name,
 		).Err(); err != nil {
@@ -264,7 +281,7 @@ func (c *Coordinator) handleSliding(ctx context.Context, t time.Time, q config.Q
 
 		for tSec > endSec {
 			winStart := endSec - windowSec
-			count, _ := c.rdb.ZCount(ctx, dataKey,
+			count, _ := c.rdb.ZCount(ctx, specificDataKey,
 				strconv.FormatInt(winStart, 10),
 				strconv.FormatInt(endSec, 10)).Result()
 			if count > 0 {
@@ -277,7 +294,7 @@ func (c *Coordinator) handleSliding(ctx context.Context, t time.Time, q config.Q
 		startSec = endSec - windowSec
 
 		if err := recordSetWindowStart.Run(ctx, c.rdb,
-			[]string{windowNextKey},
+			[]string{specificWindowNextKey},
 			strconv.FormatInt(startSec, 10),
 			q.Name,
 		).Err(); err != nil {
@@ -289,20 +306,23 @@ func (c *Coordinator) handleSliding(ctx context.Context, t time.Time, q config.Q
 }
 
 func (c *Coordinator) handleSession(ctx context.Context, t time.Time, q config.Query) error {
+	prefix := q.DataSource
+	specificWindowNextKey := windowNextKey + ":" + prefix
+	specificSessionKey := sessionKey + ":" + prefix
 	const sessionGapSeconds = 300
 	gapSec := int64(sessionGapSeconds)
 	nowSec := t.Unix()
 
-	keys, err := c.rdb.Keys(ctx, sessionKey+":*").Result()
+	keys, err := c.rdb.Keys(ctx, specificSessionKey+":*").Result()
 	if err != nil {
 		return fmt.Errorf("redis keys failed: %w", err)
 	}
 
 	for _, timesKey := range keys {
 
-		id := timesKey[len(sessionKey)+1:]
+		id := timesKey[len(specificSessionKey)+1:]
 
-		lockKeySession := lockKey + q.Name + id
+		lockKeySession := lockKey + ":" + prefix + ":" + q.Name + ":" + id
 		memberStart := q.Name + ":" + id + ":start"
 
 		scores, err := c.rdb.ZRangeWithScores(ctx, timesKey, 0, -1).Result()
@@ -312,7 +332,7 @@ func (c *Coordinator) handleSession(ctx context.Context, t time.Time, q config.Q
 		}
 
 		if len(scores) == 0 {
-			c.rdb.ZRem(ctx, windowNextKey, memberStart)
+			c.rdb.ZRem(ctx, specificWindowNextKey, memberStart)
 			continue
 		}
 
@@ -343,12 +363,12 @@ func (c *Coordinator) handleSession(ctx context.Context, t time.Time, q config.Q
 			if diff > gapSec {
 				c.triggerWorker(time.Unix(winStart, 0).UTC(), time.Unix(winEnd, 0).UTC(), q, currentID)
 				c.rdb.ZRemRangeByScore(ctx, currentTimesKey, "-inf", strconv.FormatInt(winEnd, 10))
-				c.rdb.ZRem(ctx, windowNextKey, currentMemberStart)
+				c.rdb.ZRem(ctx, specificWindowNextKey, currentMemberStart)
 				return
 			}
 
 			if err := recordSetWindowStart.Run(ctx, c.rdb,
-				[]string{windowNextKey},
+				[]string{specificWindowNextKey},
 				strconv.FormatInt(winStart, 10),
 				currentMemberStart,
 			).Err(); err != nil {
