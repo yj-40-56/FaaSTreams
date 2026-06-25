@@ -8,6 +8,41 @@ In the final production architecture, live data will be pushed from external sou
 
 ---
 
+## E2E Example - local
+For a local demonstration run terminal command:
+```bash
+docker compose -f docker/docker-compose.dev.yml up --build
+```
+When using this setup, ensure that the data folder contains a .csv with its header (column names).
+
+To delete the setup run:
+```bash
+docker compose -f docker/docker-compose.dev.yml down
+```
+
+## E2E Example - Google Cloud
+If coordinator is not deployed yet, deploy by running:
+```bash
+gcloud run deploy coordinator-sid     
+  --image europe-west3-docker.pkg.dev/faastreams/e2e-cloud-sid/coordinator     
+  --region europe-west3     
+  --min-instances=0     
+  --max-instances=10     
+  --set-env-vars RUN_MODE=http,
+  REDIS_HOST=<redis-ip-address>,
+  REDIS_PORT=<redis-port>,
+  WORKER_URL=<worker-url>,
+  PUBSUB_PROJECT_ID=<project-id>,
+  PUBSUB_TOPIC_ID=<topic-id>,
+  PUBSUB_SUBSCRIPTION_ID=<subscription-id>,
+  CONFIG_PATH=/app/config/test.yaml
+```
+
+Then run simulator (from simulator directory) script to publish mock data to Pub/Sub topic:
+```bash
+PUBSUB_PROJECT_ID=faastreams PUBSUB_TOPIC_ID=ais-stream CSV_PATH=../../data/ais.csv go run .
+```
+
 ## Phase 1: Worker Development Setup
 
 Currently, this repository contains the foundational infrastructure needed to begin developing the **worker side** of the application.

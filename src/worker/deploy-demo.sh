@@ -1,0 +1,1 @@
+gcloud functions deploy worker-sid --gen2 --runtime python312 --region europe-west3 --memory 2048Mi --source . --entry-point handler --trigger-http --allow-unauthenticated --network default --subnet projects/faastreams/regions/europe-west3/subnetworks/default --env-vars-file gcloud-env-demo.yaml --max-instances 10 --timeout 540

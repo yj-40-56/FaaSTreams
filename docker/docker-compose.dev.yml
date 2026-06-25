@@ -1,0 +1,82 @@
+services:
+  simulator:
+    build:
+      context: ..
+      dockerfile: src/simulator/Dockerfile
+    depends_on:
+      pubsub:
+        condition: service_healthy
+      coordinator:
+        condition: service_started
+    environment:
+      PUBSUB_EMULATOR_HOST: pubsub:8085
+      PUBSUB_PROJECT_ID: local-project
+      PUBSUB_TOPIC_ID: ais-stream
+      CSV_PATH: /app/data/ais.csv
+    volumes:
+      - ../data:/app/data:ro
+
+  pubsub:
+    image: google/cloud-sdk:emulators
+    command: gcloud beta emulators pubsub start --host-port=0.0.0.0:8085
+    ports:
+      - "8085:8085"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085"]
+      interval: 60s
+      timeout: 3s
+      retries: 10
+
+  coordinator:
+    build:
+      context: ..
+      dockerfile: src/coordinator/Dockerfile
+    depends_on:
+      redis:
+        condition: service_healthy
+      pubsub:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      PUBSUB_EMULATOR_HOST: pubsub:8085
+      PUBSUB_PROJECT_ID: local-project
+      PUBSUB_TOPIC_ID: ais-stream
+      PUBSUB_SUBSCRIPTION_ID: coordinator-sub
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      WORKER_URL: http://worker:8080
+      CONFIG_PATH: /app/config/test.yaml
+    volumes:
+      - ../data:/app/data:ro
+      - coordinator-go-cache:/go/pkg/mod
+    restart: on-failure
+
+  redis:
+    image: redis:latest
+    command: redis-server --save "" --appendonly no
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  worker:
+    build:
+      context: ..
+      dockerfile: src/worker/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+
+volumes:
+  coordinator-go-cache:
+

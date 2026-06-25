@@ -1,0 +1,9 @@
+RUN_MODE: http
+REDIS_HOST: 10.101.64.19
+REDIS_PORT: "6379"
+REDIS_KEY: mod-stream-sid
+COORDINATOR_KEY_PREFIX: coordinator-sid
+WORKER_URL: https://europe-west3-faastreams.cloudfunctions.net/worker-sid
+PUBSUB_PROJECT_ID: faastreams
+PUBSUB_TOPIC_ID: ais-stream
+PUBSUB_SUBSCRIPTION_ID: faas-input-sub

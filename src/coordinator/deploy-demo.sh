@@ -1,0 +1,1 @@
+gcloud functions deploy coordinator-sid --gen2 --runtime go126 --region europe-west3 --memory 1024Mi --cpu 1 --source . --entry-point Handler --trigger-http --allow-unauthenticated --network default --subnet projects/faastreams/regions/europe-west3/subnetworks/default --env-vars-file gcloud-env-demo.yaml --max-instances 10 --concurrency 100

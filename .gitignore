@@ -4,6 +4,9 @@ __pycache__/
 bin/
 dist/
 
+# Virtual environments
+.venv/
+
 # Local Environment / Secrets
 .env
 auth.json
@@ -17,3 +20,6 @@ auth.json
 # Database files
 *.db
 *.duckdb
+
+data/
+*.csv
