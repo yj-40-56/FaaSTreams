@@ -1,4 +1,5 @@
 ENV ?= baseline
+IMAGE_REPO = europe-west3-docker.pkg.dev/faastreams/worker-images
 
 TF = docker run --rm -it \
 	-v "$(shell pwd)/..:/workspace" \
@@ -6,6 +7,18 @@ TF = docker run --rm -it \
 	-e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
 	-w /workspace/terraform \
 	hashicorp/terraform:1.9
+
+# Build the worker Docker image and push to Artifact Registry.
+# Run this before make apply whenever the worker source or Dockerfile changes.
+build-worker:
+	gcloud artifacts repositories create worker-images \
+		--repository-format=docker --location=europe-west3 \
+		--project=faastreams 2>/dev/null || true
+	gcloud builds submit .. \
+		--project=faastreams \
+		--region=europe-west3 \
+		--config=docker/worker.cloudbuild.yaml \
+		--substitutions=_IMAGE=$(IMAGE_REPO)/worker-$(ENV)
 
 # One-time: create the GCS bucket that stores Terraform state.
 bucket-init:
@@ -42,4 +55,4 @@ destroy:
 	$(TF) workspace select -or-create $(ENV)
 	$(TF) destroy -var-file="environments/$(ENV).tfvars"
 
-.PHONY: bucket-init purge-env init validate plan apply destroy
+.PHONY: build-worker bucket-init purge-env init validate plan apply destroy

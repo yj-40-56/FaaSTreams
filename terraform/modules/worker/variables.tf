@@ -10,6 +10,11 @@ variable "project_id" {
   type = string
 }
 
+variable "image_uri" {
+  type        = string
+  description = "Full Artifact Registry image URI for the worker. Build with: make build-worker ENV=<env>"
+}
+
 variable "memory" {
   type = string
 }
@@ -39,9 +44,5 @@ variable "data_sink_url" {
 }
 
 variable "vpc_connector" {
-  type = string
-}
-
-variable "source_bucket" {
   type = string
 }

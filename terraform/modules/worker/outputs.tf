@@ -1,4 +1,4 @@
 output "url" {
-  description = "HTTP trigger URL for the worker function."
-  value       = google_cloudfunctions2_function.worker.url
+  description = "URL of the worker Cloud Run service."
+  value       = google_cloud_run_v2_service.worker.uri
 }

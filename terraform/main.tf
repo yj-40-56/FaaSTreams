@@ -44,6 +44,7 @@ module "worker" {
   env_name      = var.env_name
   region        = var.region
   project_id    = var.project_id
+  image_uri     = "${var.region}-docker.pkg.dev/${var.project_id}/worker-images/worker-${var.env_name}"
   memory        = var.worker_memory
   max_instances = var.worker_max_instances
   timeout       = var.worker_timeout
@@ -52,7 +53,6 @@ module "worker" {
   redis_key     = local.redis_key
   data_sink_url = module.data_sink.url
   vpc_connector = local.vpc_connector_id
-  source_bucket = google_storage_bucket.functions_source.name
 }
 
 module "coordinator" {

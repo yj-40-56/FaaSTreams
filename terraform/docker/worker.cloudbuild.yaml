@@ -1,0 +1,11 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - terraform/docker/worker.Dockerfile
+      - -t
+      - ${_IMAGE}
+      - src/worker
+images:
+  - ${_IMAGE}
