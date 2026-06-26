@@ -10,6 +10,10 @@ terraform {
       version = "~> 2.4"
     }
   }
+  backend "gcs" {
+    bucket = "faastreams-terraform-state"
+    prefix = "terraform/state"
+  }
 }
 
 provider "google" {
