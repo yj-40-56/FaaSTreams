@@ -8,14 +8,18 @@ TF = docker run --rm -it \
 	hashicorp/terraform:1.9
 
 # One-time: create the GCS bucket that stores Terraform state.
-# Run this once on Cloud Shell before anything else.
+# Run once before make init.
 bucket-init:
-	gcloud storage buckets create gs://faastreams-terraform-state \
-		--project=faastreams --location=europe-west3 \
-		--uniform-bucket-level-access 2>/dev/null || true
+	docker run --rm \
+		-v "$(HOME)/.config/gcloud:/root/.config/gcloud:ro" \
+		-e CLOUDSDK_CORE_PROJECT=faastreams \
+		gcr.io/google.com/cloudsdktool/google-cloud-cli:slim \
+		gcloud storage buckets create gs://faastreams-terraform-state \
+			--project=faastreams --location=europe-west3 \
+			--uniform-bucket-level-access 2>/dev/null || true
 
 init:
-	$(TF) init
+	$(TF) init -reconfigure
 
 validate:
 	$(TF) workspace select -or-create $(ENV)
