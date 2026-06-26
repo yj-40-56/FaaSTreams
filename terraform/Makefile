@@ -8,15 +8,20 @@ TF = docker run --rm -it \
 	hashicorp/terraform:1.9
 
 # One-time: create the GCS bucket that stores Terraform state.
-# Run once before make init.
 bucket-init:
-	docker run --rm \
-		-v "$(HOME)/.config/gcloud:/root/.config/gcloud:ro" \
-		-e CLOUDSDK_CORE_PROJECT=faastreams \
-		gcr.io/google.com/cloudsdktool/google-cloud-cli:slim \
-		gcloud storage buckets create gs://faastreams-terraform-state \
-			--project=faastreams --location=europe-west3 \
-			--uniform-bucket-level-access 2>/dev/null || true
+	gcloud storage buckets create gs://faastreams-terraform-state \
+		--project=faastreams --location=europe-west3 \
+		--uniform-bucket-level-access 2>/dev/null || true
+
+# Delete orphaned GCP resources for ENV that exist outside Terraform state.
+# Run before make apply if you hit "resource already exists" errors.
+purge-env:
+	gcloud storage rm -r gs://faastreams-functions-source-$(ENV) --project=faastreams 2>/dev/null || true
+	gcloud pubsub subscriptions delete ais-stream-$(ENV)-sub --project=faastreams 2>/dev/null || true
+	gcloud pubsub topics delete ais-stream-$(ENV) --project=faastreams 2>/dev/null || true
+	gcloud functions delete coordinator-$(ENV) --region=europe-west3 --gen2 --project=faastreams 2>/dev/null || true
+	gcloud functions delete worker-$(ENV) --region=europe-west3 --gen2 --project=faastreams 2>/dev/null || true
+	gcloud functions delete data-sink-$(ENV) --region=europe-west3 --gen2 --project=faastreams 2>/dev/null || true
 
 init:
 	$(TF) init -reconfigure
@@ -37,4 +42,4 @@ destroy:
 	$(TF) workspace select -or-create $(ENV)
 	$(TF) destroy -var-file="environments/$(ENV).tfvars"
 
-.PHONY: bucket-init init validate plan apply destroy
+.PHONY: bucket-init purge-env init validate plan apply destroy
