@@ -172,56 +172,60 @@ func (c *Coordinator) recordCleanup(ctx context.Context, prefix string) {
 	}
 }
 
-func (c *Coordinator) handleTumbling(ctx context.Context, t time.Time, q config.Query) error {
+// tumbling: slideSecs == windowSec
+func (c *Coordinator) createWindows(ctx context.Context, t time.Time, q config.Query, slideSecs int64) error {
 	prefix := q.DataSource
-	lockKeyTumbling := lockKey + ":" + prefix + ":" + q.Name
-	specificDataKey := dataKey + ":" + prefix
-	specificWindowNextKey := windowNextKey + ":" + prefix
-	startScore, err := c.rdb.ZScore(ctx, specificWindowNextKey, q.Name).Result()
-	windowSec := int64(q.WindowSize)
+	lockKeyWindow := lockKey + ":" + prefix + ":" + q.Name
 
-	if errors.Is(err, redis.Nil) {
-		startSec := t.Unix()
-		if err := recordSetWindowStart.Run(ctx, c.rdb,
-			[]string{specificWindowNextKey},
-			strconv.FormatInt(startSec, 10),
-			q.Name,
-		).Err(); err != nil {
-			return fmt.Errorf("redis init window failed: %w", err)
-		}
-		return nil
-	}
-
-	if err != nil {
-		return fmt.Errorf("redis zscore failed: %w", err)
-	}
-
-	startSec := int64(startScore)
-	endSec := startSec + windowSec
-	tSec := t.Unix()
-
-	if tSec <= endSec {
-		return nil
-	}
-	ok, _ := c.rdb.SetNX(ctx, lockKeyTumbling, "locked", 2*time.Minute).Result()
+	ok, _ := c.rdb.SetNX(ctx, lockKeyWindow, "locked", 2*time.Minute).Result()
 	if !ok {
 		return nil
 	}
 
 	var updateErr error
 	func() {
-		defer c.rdb.Del(ctx, lockKeyTumbling)
+		defer c.rdb.Del(ctx, lockKeyWindow)
+
+		specificDataKey := dataKey + ":" + prefix
+		specificWindowNextKey := windowNextKey + ":" + prefix
+		startScore, err := c.rdb.ZScore(ctx, specificWindowNextKey, q.Name).Result()
+		windowSec := int64(q.WindowSize)
+
+		if errors.Is(err, redis.Nil) {
+			startSec := t.Unix()
+			if err := recordSetWindowStart.Run(ctx, c.rdb,
+				[]string{specificWindowNextKey},
+				strconv.FormatInt(startSec, 10),
+				q.Name,
+			).Err(); err != nil {
+				updateErr = fmt.Errorf("redis init window failed: %w", err)
+			}
+			return
+		}
+
+		if err != nil {
+			updateErr = fmt.Errorf("redis zscore failed: %w", err)
+			return
+		}
+
+		startSec := int64(startScore)
+		endSec := startSec + windowSec
+		tSec := t.Unix()
+
+		if tSec <= endSec {
+			return
+		}
 
 		for tSec > endSec {
 			winStart := endSec - windowSec
 			count, _ := c.rdb.ZCount(ctx, specificDataKey,
 				strconv.FormatInt(winStart, 10),
-				strconv.FormatInt(endSec, 10)).Result()
+				"("+strconv.FormatInt(endSec, 10)).Result()
 			if count > 0 {
 				c.triggerWorker(time.Unix(winStart, 0).UTC(), time.Unix(endSec, 0).UTC(), q, "")
 			}
-
-			endSec += windowSec
+			// tumbling: slideSecs == windowSec
+			endSec += slideSecs
 		}
 
 		startSec = endSec - windowSec
@@ -237,72 +241,14 @@ func (c *Coordinator) handleTumbling(ctx context.Context, t time.Time, q config.
 	return updateErr
 }
 
+func (c *Coordinator) handleTumbling(ctx context.Context, t time.Time, q config.Query) error {
+	return c.createWindows(ctx, t, q, int64(q.WindowSize))
+}
+
 func (c *Coordinator) handleSliding(ctx context.Context, t time.Time, q config.Query) error {
-	prefix := q.DataSource
-	lockKeySliding := lockKey + ":" + prefix + ":" + q.Name
-	specificDataKey := dataKey + ":" + prefix
-	specificWindowNextKey := windowNextKey + ":" + prefix
-	startScore, err := c.rdb.ZScore(ctx, specificWindowNextKey, q.Name).Result()
-	windowSec := int64(q.WindowSize)
 	const slideSeconds = 60
 	slideSecs := int64(slideSeconds) // int64(q.SlideInSeconds)
-
-	if errors.Is(err, redis.Nil) {
-		startSec := t.Unix()
-		if err := recordSetWindowStart.Run(ctx, c.rdb,
-			[]string{specificWindowNextKey},
-			strconv.FormatInt(startSec, 10),
-			q.Name,
-		).Err(); err != nil {
-			return fmt.Errorf("redis init window failed: %w", err)
-		}
-		return nil
-	}
-
-	if err != nil {
-		return fmt.Errorf("redis zscore failed: %w", err)
-	}
-
-	startSec := int64(startScore)
-	endSec := startSec + windowSec
-	tSec := t.Unix()
-
-	if tSec <= endSec {
-		return nil
-	}
-	ok, _ := c.rdb.SetNX(ctx, lockKeySliding, "locked", 2*time.Minute).Result()
-	if !ok {
-		return nil
-	}
-
-	var updateErr error
-	func() {
-		defer c.rdb.Del(ctx, lockKeySliding)
-
-		for tSec > endSec {
-			winStart := endSec - windowSec
-			count, _ := c.rdb.ZCount(ctx, specificDataKey,
-				strconv.FormatInt(winStart, 10),
-				strconv.FormatInt(endSec, 10)).Result()
-			if count > 0 {
-				c.triggerWorker(time.Unix(winStart, 0).UTC(), time.Unix(endSec, 0).UTC(), q, "")
-			}
-
-			endSec += slideSecs
-		}
-
-		startSec = endSec - windowSec
-
-		if err := recordSetWindowStart.Run(ctx, c.rdb,
-			[]string{specificWindowNextKey},
-			strconv.FormatInt(startSec, 10),
-			q.Name,
-		).Err(); err != nil {
-			updateErr = fmt.Errorf("redis set window failed: %w", err)
-		}
-	}()
-	return updateErr
-
+	return c.createWindows(ctx, t, q, slideSecs)
 }
 
 func (c *Coordinator) handleSession(ctx context.Context, t time.Time, q config.Query) error {
