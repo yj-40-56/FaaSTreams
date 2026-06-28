@@ -55,6 +55,7 @@ sources:
       latitude:  { from_field: "latitude",  type: DOUBLE, required: true }
       longitude: { from_field: "longitude", type: DOUBLE, required: true }
       timestamp: { from_field: "timestamp", type: VARCHAR }
+    reference_tables: {}
 
 
 queries:

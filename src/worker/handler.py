@@ -21,7 +21,7 @@ def handler(request):
         query_name   = str(body["query_name"])
         source = {
             "columns":          body["columns"],
-            "reference_tables": body.get("reference_tables", {}),
+            "reference_tables": body.get("reference_tables") or {},
         }
         query_config = {
             "query":        str(body["query"]),
