@@ -26,7 +26,14 @@ make flush-redis ENV=baseline
 cd ../src/simulator
 PUBSUB_PROJECT_ID=faastreams PUBSUB_TOPIC_ID=ais-stream-baseline CSV_PATH=../../data/ais.csv go run .
 
-# 3. Read results from Cloud Logging (run while simulator is active or immediately after)
+# 3. Save results (run from terraform/ immediately after the simulator finishes)
+make save-results ENV=baseline
+```
+
+Results are saved to `results/{env}_{window_size}s_{timestamp}.json`.
+
+To view raw logs instead:
+```bash
 gcloud logging read \
   'resource.type="cloud_run_revision" AND (resource.labels.service_name="coordinator-baseline" OR resource.labels.service_name="worker-baseline") AND textPayload!=""' \
   --project=faastreams --limit=50 --format="value(timestamp,textPayload)" \
@@ -49,12 +56,38 @@ Three pre-configured environments are available:
 | `benchmark-small-window` | 30s | 2 GB | coordinator overhead at higher window frequency |
 | `benchmark-high-memory` | 60s | 4 GB | whether more RAM reduces query latency |
 
+Commands for each:
+
+```bash
+# baseline (topic: ais-stream-baseline)
+make apply ENV=baseline
+make flush-redis ENV=baseline
+PUBSUB_TOPIC_ID=ais-stream-baseline go run .    # from src/simulator
+make save-results ENV=baseline
+make destroy ENV=baseline
+
+# benchmark-small-window (topic: ais-stream-bench-30s)
+make apply ENV=benchmark-small-window
+make flush-redis ENV=benchmark-small-window
+PUBSUB_TOPIC_ID=ais-stream-bench-30s go run .
+make save-results ENV=benchmark-small-window
+make destroy ENV=benchmark-small-window
+
+# benchmark-high-memory (topic: ais-stream-bench-highmem)
+make apply ENV=benchmark-high-memory
+make flush-redis ENV=benchmark-high-memory
+PUBSUB_TOPIC_ID=ais-stream-bench-highmem go run .
+make save-results ENV=benchmark-high-memory
+make destroy ENV=benchmark-high-memory
+```
+
 You can also override the window size on any environment without editing the tfvars file:
 
 ```bash
 make apply ENV=baseline WINDOW_SIZE=15
 make flush-redis ENV=baseline
-# run simulator with PUBSUB_TOPIC_ID=ais-stream-baseline
+PUBSUB_TOPIC_ID=ais-stream-baseline go run .
+make save-results ENV=baseline WINDOW_SIZE=15
 make destroy ENV=baseline
 ```
 

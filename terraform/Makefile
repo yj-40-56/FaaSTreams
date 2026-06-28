@@ -55,6 +55,11 @@ flush-redis:
 	gcloud run jobs execute redis-flush-$(ENV) --region=europe-west3 --project=faastreams --wait
 	gcloud run jobs delete redis-flush-$(ENV) --region=europe-west3 --project=faastreams --quiet 2>/dev/null || true
 
+# Save the most recent window results from Cloud Logging to results/.
+# Run immediately after the simulator finishes.
+save-results:
+	python3 scripts/save_results.py --env=$(ENV) $(if $(WINDOW_SIZE),--window-size=$(WINDOW_SIZE),) --project=faastreams
+
 init:
 	$(TF) init -reconfigure
 
@@ -74,4 +79,4 @@ destroy:
 	$(TF) workspace select -or-create $(ENV)
 	$(TF) destroy -var-file="environments/$(ENV).tfvars" $(WINDOW_SIZE_FLAG)
 
-.PHONY: build-worker bucket-init purge-env init validate plan apply destroy
+.PHONY: build-worker bucket-init purge-env flush-redis save-results init validate plan apply destroy

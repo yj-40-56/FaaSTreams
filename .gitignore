@@ -22,3 +22,6 @@ auth.json
 
 data/
 *.csv
+
+# Benchmark results (local only)
+terraform/results/*.json
