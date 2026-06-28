@@ -107,7 +107,7 @@ func (c *Coordinator) parseEventFromMap(data map[string]string) *Event {
 
 // Retrieve current windowEnd from Redis, if not set return zero time
 func (c *Coordinator) getWindowEnd(ctx context.Context) time.Time {
-	val, err := c.redisClient.Get(ctx, coordinatorKeyPrefix+":window_end").Result()
+	val, err := c.redisClient.Get(ctx, c.windowEndKey).Result()
 	if err == redis.Nil {
 		log.Println("[Coordinator] window_end key missing in Redis, treating as first window")
 		return time.Time{}

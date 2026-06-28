@@ -32,5 +32,5 @@ queries:
   - name: hazard_zones_proximity_alerts
     window_type: tumbling
     window_size: ${window_size}
-    query: "SELECT v.mmsi, v.name, v.sog, z.zone_name, ROUND(ST_Distance(ST_Transform(ST_Point(v.longitude, v.latitude), 'EPSG:4326', 'EPSG:3857'), ST_Transform(ST_GeomFromText(z.geom_wkt), 'EPSG:4326', 'EPSG:3857')) / 1852.0, 2) AS distance_nm FROM vessels v CROSS JOIN zones z WHERE v.latitude IS NOT NULL AND ST_Distance(ST_Transform(ST_Point(v.longitude, v.latitude), 'EPSG:4326', 'EPSG:3857'), ST_Transform(ST_GeomFromText(z.geom_wkt), 'EPSG:4326', 'EPSG:3857')) / 1852.0 < z.threshold_nm ORDER BY distance_nm"
+    query: "SELECT v.MMSI, v.Name, v.SOG, z.zone_name, ROUND(ST_Distance(ST_Transform(ST_Point(CAST(v.Longitude AS DOUBLE), CAST(v.Latitude AS DOUBLE)), 'EPSG:4326', 'EPSG:3857'), ST_Transform(ST_GeomFromText(z.geom_wkt), 'EPSG:4326', 'EPSG:3857')) / 1852.0, 2) AS distance_nm FROM events v CROSS JOIN zones z WHERE v.Latitude IS NOT NULL AND ST_Distance(ST_Transform(ST_Point(CAST(v.Longitude AS DOUBLE), CAST(v.Latitude AS DOUBLE)), 'EPSG:4326', 'EPSG:3857'), ST_Transform(ST_GeomFromText(z.geom_wkt), 'EPSG:4326', 'EPSG:3857')) / 1852.0 < z.threshold_nm ORDER BY distance_nm"
     return_type: spatial

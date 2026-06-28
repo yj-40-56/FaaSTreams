@@ -7,13 +7,7 @@ RUN pip install -r requirements.txt
 
 # Pre-install DuckDB spatial to a stable image path (not /tmp, which Cloud Run
 # mounts as an empty tmpfs at startup, wiping anything written during build).
-RUN python -c "
-import duckdb
-conn = duckdb.connect()
-conn.execute(\"SET extension_directory='/duckdb_ext'\")
-conn.execute(\"INSTALL spatial\")
-conn.close()
-"
+RUN python -c "import duckdb; conn = duckdb.connect(); conn.execute(\"SET extension_directory='/duckdb_ext'\"); conn.execute(\"INSTALL spatial\"); conn.close()"
 
 COPY . .
 

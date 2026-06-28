@@ -58,10 +58,10 @@ resource "google_cloudfunctions2_function_iam_member" "public_invoker" {
   member         = "allUsers"
 }
 
-resource "google_cloud_run_service_iam_member" "public_invoker" {
+resource "google_cloud_run_v2_service_iam_member" "public_invoker" {
   project  = var.project_id
   location = var.region
-  service  = google_cloudfunctions2_function.data_sink.name
+  name     = google_cloudfunctions2_function.data_sink.name
   role     = "roles/run.invoker"
   member   = "allUsers"
 }

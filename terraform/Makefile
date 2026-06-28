@@ -1,7 +1,8 @@
 ENV ?= baseline
 IMAGE_REPO = europe-west3-docker.pkg.dev/faastreams/worker-images
 
-TF = docker run --rm -it \
+TTY_FLAG = $(shell [ -t 0 ] && echo '-it' || echo '-i')
+TF = docker run --rm $(TTY_FLAG) \
 	-v "$(shell pwd)/..:/workspace" \
 	-v "$(HOME)/.config/gcloud:/root/.config/gcloud:ro" \
 	-e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
@@ -33,8 +34,23 @@ purge-env:
 	gcloud pubsub subscriptions delete ais-stream-$(ENV)-sub --project=faastreams 2>/dev/null || true
 	gcloud pubsub topics delete ais-stream-$(ENV) --project=faastreams 2>/dev/null || true
 	gcloud functions delete coordinator-$(ENV) --region=europe-west3 --gen2 --project=faastreams 2>/dev/null || true
-	gcloud functions delete worker-$(ENV) --region=europe-west3 --gen2 --project=faastreams 2>/dev/null || true
+	gcloud run services delete worker-$(ENV) --region=europe-west3 --project=faastreams --quiet 2>/dev/null || true
 	gcloud functions delete data-sink-$(ENV) --region=europe-west3 --gen2 --project=faastreams 2>/dev/null || true
+
+# Flush all coordinator state from Redis before a benchmark run.
+# Required when re-running after a previous session: stale window_end keys cause
+# the coordinator to catch-up through thousands of empty historical windows.
+flush-redis:
+	$(eval CODE := $(shell base64 -w 0 scripts/redis_flush.py))
+	gcloud run jobs create redis-flush-$(ENV) \
+		--image=$(IMAGE_REPO)/worker-$(ENV) \
+		--region=europe-west3 --project=faastreams \
+		--vpc-connector=projects/faastreams/locations/europe-west3/connectors/redis-eu-west3-connector \
+		--set-env-vars="CODE=$(CODE),REDIS_HOST=10.101.64.19,REDIS_PORT=6379,ENV=$(ENV)" \
+		--command=/bin/sh \
+		--args='-c,echo $$CODE | base64 -d | python3' 2>/dev/null || true
+	gcloud run jobs execute redis-flush-$(ENV) --region=europe-west3 --project=faastreams --wait
+	gcloud run jobs delete redis-flush-$(ENV) --region=europe-west3 --project=faastreams --quiet 2>/dev/null || true
 
 init:
 	$(TF) init -reconfigure
