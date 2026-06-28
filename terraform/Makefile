@@ -1,5 +1,8 @@
 ENV ?= baseline
+WINDOW_SIZE ?=
 IMAGE_REPO = europe-west3-docker.pkg.dev/faastreams/worker-images
+
+WINDOW_SIZE_FLAG = $(if $(WINDOW_SIZE),-var "window_size=$(WINDOW_SIZE)",)
 
 TTY_FLAG = $(shell [ -t 0 ] && echo '-it' || echo '-i')
 TF = docker run --rm $(TTY_FLAG) \
@@ -61,14 +64,14 @@ validate:
 
 plan:
 	$(TF) workspace select -or-create $(ENV)
-	$(TF) plan -var-file="environments/$(ENV).tfvars"
+	$(TF) plan -var-file="environments/$(ENV).tfvars" $(WINDOW_SIZE_FLAG)
 
 apply:
 	$(TF) workspace select -or-create $(ENV)
-	$(TF) apply -var-file="environments/$(ENV).tfvars"
+	$(TF) apply -var-file="environments/$(ENV).tfvars" $(WINDOW_SIZE_FLAG)
 
 destroy:
 	$(TF) workspace select -or-create $(ENV)
-	$(TF) destroy -var-file="environments/$(ENV).tfvars"
+	$(TF) destroy -var-file="environments/$(ENV).tfvars" $(WINDOW_SIZE_FLAG)
 
 .PHONY: build-worker bucket-init purge-env init validate plan apply destroy
