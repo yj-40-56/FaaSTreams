@@ -1,5 +1,4 @@
 import duckdb
-from zones import HAZARD_ZONES
 
 def run(records: list[dict], query: str, source: dict) -> list[dict]:
     columns = source["columns"]
