@@ -203,6 +203,11 @@ func (c *Coordinator) triggerWorker(ctx context.Context, windowStart time.Time, 
 		"data_source":      c.query.DataSource,
 		"columns":          source.Columns,
 		"reference_tables": source.ReferenceTables,
+		"timestamp_field":  source.TimestampField,
+		"timestamp_format": source.TimestampFormat,
+		"id_field":         source.IDField,
+		"lat_field":        source.LatField,
+		"lon_field":        source.LonField,
 	}
 
 	dataBytes, _ := json.Marshal(data)
