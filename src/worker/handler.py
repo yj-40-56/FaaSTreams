@@ -34,6 +34,9 @@ def handler(request):
         print(f"[Worker] Invalid payload: {e} | body={body}", flush=True)
         return {"error": f"Invalid payload: {e}"}, 400
 
+    if query_config["data_source"] == "generic":
+            query_config["query"] = normalize_query(query_config["query"], body)
+
     log_prefix = f"[Worker:{query_name}]"
 
     start_human = time.strftime("%H:%M:%S", time.gmtime(window_start))
@@ -91,6 +94,14 @@ def _forward_to_sink(results, window_start, window_end, query_name, return_type)
         print(f"{log_prefix} Forwarded results to data sink.", flush=True)
     except urllib.error.URLError as e:
         print(f"{log_prefix} Failed to forward to data sink: {e}", flush=True)
+
+def normalize_query(query: str, body: dict) -> str:
+    return query.format_map({
+        "id_field":        body["id_field"],
+        "timestamp_field": body["timestamp_field"],
+        "lat_field":       body["lat_field"],
+        "lon_field":       body["lon_field"],
+    })
 
 if __name__ == "__main__":
     import flask
