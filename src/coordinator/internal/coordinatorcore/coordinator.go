@@ -200,7 +200,7 @@ func (c *Coordinator) triggerWorker(ctx context.Context, windowStart time.Time, 
 		"return_type":      c.query.ReturnType,
 		"is_alert":         c.query.IsAlert,
 		"alert_format":     c.query.AlertFormat,
-		"data_source":      sourceName,
+		"data_source":      c.query.DataSource,
 		"columns":          source.Columns,
 		"reference_tables": source.ReferenceTables,
 	}
