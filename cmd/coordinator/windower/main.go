@@ -81,7 +81,7 @@ func init() {
 
 func processWindows(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().Add(-lateBufferSeconds * time.Second)
-	ctx := r.Context()
+	ctx := context.Background()
 
 	var wg sync.WaitGroup
 	errCh := make(chan error, len(coord.config.Queries))
@@ -119,17 +119,21 @@ func processWindows(w http.ResponseWriter, r *http.Request) {
 		coord.recordCleanup(ctx, sourceName)
 	}
 
+	hasError := false
 	for err := range errCh {
 		if err != nil {
-			log.Printf("[Windower] tick failed: %v", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+			log.Printf("[Windower] query failed: %v", err)
+			hasError = true
 		}
+	}
+	if hasError {
+		http.Error(w, "one or more queries failed", http.StatusInternalServerError)
+		return
 	}
 	w.WriteHeader(http.StatusOK)
 }
 
-func (c *Coordinator) triggerWorker(windowStart, windowEnd time.Time, q config.Query, id string) {
+func (c *Coordinator) triggerWorker(windowStart, windowEnd time.Time, q config.Query, id string) error {
 
 	source, _ := c.config.Sources[q.DataSource]
 
@@ -146,19 +150,16 @@ func (c *Coordinator) triggerWorker(windowStart, windowEnd time.Time, q config.Q
 		"columns":          source.Columns,
 		"reference_tables": source.ReferenceTables,
 	}
-	dataBytes, _ := json.Marshal(data)
-	go func(payload []byte, name string) {
-		client := &http.Client{Timeout: 30 * time.Second}
+	payload, _ := json.Marshal(data)
+	client := &http.Client{Timeout: 30 * time.Second}
 
-		resp, err := client.Post(os.Getenv("WORKER_URL"), "application/json", bytes.NewBuffer(payload))
-		if err != nil {
-			log.Printf("[Coordinator] Trigger failed for query %s: %v", name, err)
-			return
-		}
-		defer resp.Body.Close()
-		log.Printf("[Coordinator:%s] Worker spawned", name)
+	resp, err := client.Post(os.Getenv("WORKER_URL"), "application/json", bytes.NewBuffer(payload))
+	if err != nil {
+		return fmt.Errorf("trigger worker %s failed: %w", q.Name, err)
+	}
+	defer resp.Body.Close()
 
-	}(dataBytes, q.Name)
+	return nil
 }
 
 func (c *Coordinator) recordCleanup(ctx context.Context, prefix string) {
@@ -216,17 +217,27 @@ func (c *Coordinator) createWindows(ctx context.Context, t time.Time, q config.Q
 			return
 		}
 
+		var workerWg sync.WaitGroup
+
 		for tSec > endSec {
 			winStart := endSec - windowSec
 			count, _ := c.rdb.ZCount(ctx, specificDataKey,
 				strconv.FormatInt(winStart, 10),
 				"("+strconv.FormatInt(endSec, 10)).Result()
 			if count > 0 {
-				c.triggerWorker(time.Unix(winStart, 0).UTC(), time.Unix(endSec, 0).UTC(), q, "")
+				workerWg.Add(1)
+				go func(start, end int64) {
+					defer workerWg.Done()
+					if err := c.triggerWorker(time.Unix(start, 0).UTC(), time.Unix(end, 0).UTC(), q, ""); err != nil {
+						log.Printf("[Coordinator] trigger worker %s failed: %v", q.Name, err)
+					}
+				}(winStart, endSec)
 			}
 			// tumbling: slideSecs == windowSec
 			endSec += slideSecs
 		}
+
+		workerWg.Wait()
 
 		startSec = endSec - windowSec
 
@@ -293,21 +304,34 @@ func (c *Coordinator) handleSession(ctx context.Context, t time.Time, q config.Q
 			winStart := int64(scores[0].Score)
 			winEnd := int64(scores[0].Score)
 
+			var workerWg sync.WaitGroup
+
 			for i := 1; i < len(scores); i++ {
 				nextEvent := int64(scores[i].Score)
 				diff := nextEvent - winEnd
 				if diff <= gapSec {
 					winEnd = nextEvent
 				} else {
-					c.triggerWorker(time.Unix(winStart, 0).UTC(), time.Unix(winEnd, 0).UTC(), q, currentID)
+					workerWg.Add(1)
+					go func(start, end int64, query config.Query, id string) {
+						defer workerWg.Done()
+						if err := c.triggerWorker(time.Unix(start, 0).UTC(), time.Unix(end, 0).UTC(), query, id); err != nil {
+							log.Printf("[Session] failed to trigger worker for id %s: %v", id, err)
+						}
+					}(winStart, winEnd, q, currentID)
 					winStart = int64(scores[i].Score)
 					winEnd = int64(scores[i].Score)
 				}
 			}
 
+			workerWg.Wait()
+
 			diff := nowSec - winEnd
 			if diff > gapSec {
-				c.triggerWorker(time.Unix(winStart, 0).UTC(), time.Unix(winEnd, 0).UTC(), q, currentID)
+				if err := c.triggerWorker(time.Unix(winStart, 0).UTC(), time.Unix(winEnd, 0).UTC(), q, currentID); err != nil {
+					log.Printf("[Session] failed to trigger window for id %s: %v", currentID, err)
+				}
+
 				c.rdb.ZRemRangeByScore(ctx, currentTimesKey, "-inf", strconv.FormatInt(winEnd, 10))
 				c.rdb.ZRem(ctx, specificWindowNextKey, currentMemberStart)
 				return
