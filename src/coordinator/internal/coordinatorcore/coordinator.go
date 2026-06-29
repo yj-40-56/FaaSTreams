@@ -143,6 +143,11 @@ func (c *Coordinator) setWindowEnd(ctx context.Context, t time.Time) {
 
 // Store event in Redis sorted set, where score is timestamp and member is JSON data, sorted by score
 func (c *Coordinator) handleEvent(ctx context.Context, event *Event, rawData []byte) {
+	if c.query.DataSource != "" && c.query.DataSource != "generic" && event.SourceName != c.query.DataSource {
+		log.Printf("[Coordinator:%s] Ignoring event from source: %s\n", c.query.Name, event.SourceName)
+		return
+	}
+
 	windowEnd := c.getWindowEnd(ctx)
 	if windowEnd.IsZero() {
 		windowEnd = event.Timestamp.Add(c.windowSize)
@@ -195,9 +200,14 @@ func (c *Coordinator) triggerWorker(ctx context.Context, windowStart time.Time, 
 		"return_type":      c.query.ReturnType,
 		"is_alert":         c.query.IsAlert,
 		"alert_format":     c.query.AlertFormat,
-		"data_source":      sourceName,
+		"data_source":      c.query.DataSource,
 		"columns":          source.Columns,
 		"reference_tables": source.ReferenceTables,
+		"timestamp_field":  source.TimestampField,
+		"timestamp_format": source.TimestampFormat,
+		"id_field":         source.IDField,
+		"lat_field":        source.LatField,
+		"lon_field":        source.LonField,
 	}
 
 	dataBytes, _ := json.Marshal(data)

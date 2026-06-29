@@ -40,6 +40,23 @@ sources:
           - zone_name:    "Military Exercise Area Bornholm"
             geom_wkt:     "POLYGON((15.5 55.5, 16.0 55.5, 16.0 56.0, 15.5 56.0, 15.5 55.5))"
             threshold_nm: 3.0
+  t-drive_data_v1:
+    description: "T-Drive dataset containing GPS trajectories of taxis in Beijing."
+    csv_path: "../../data/t-drive.csv"
+    csv_delimiter: ","
+    scale_factor: 10
+    id_field: "taxi_id"
+    timestamp_field: "timestamp"
+    timestamp_format: "2006-01-02 15:04:05"
+    lat_field: "latitude"
+    lon_field: "longitude"
+    columns:
+      taxi_id:   { from_field: "taxi_id",   type: VARCHAR }
+      latitude:  { from_field: "latitude",  type: DOUBLE, required: true }
+      longitude: { from_field: "longitude", type: DOUBLE, required: true }
+      timestamp: { from_field: "timestamp", type: VARCHAR }
+    reference_tables: {}
+
 
 queries:
 #  - name: vessel_count
@@ -82,4 +99,31 @@ queries:
     return_type: spatial
     is_alert: true
     alert_format: "{mmsi} ({name}) — {distance_nm} nm from \"{zone_name}\" (threshold {threshold_nm} nm) | sog={sog} kn | status={navigationalStatus} | ts={timestamp}"
+
+  - name: position_density_grid
+    data_source: generic
+    window_type: tumbling
+    window_size: 60
+    query: >
+      SELECT ROUND({lat_field}, 1) AS lat_bin, ROUND({lon_field}, 1) AS lon_bin, COUNT(*) AS report_count
+      FROM events
+      WHERE {lat_field} IS NOT NULL
+      GROUP BY lat_bin, lon_bin
+      ORDER BY report_count DESC
+    return_type: spatial
+    is_alert: false
+    alert_format: ""
+
+  - name: report_count_per_object
+    data_source: t-drive_data_v1
+    window_type: tumbling
+    window_size: 60
+    return_type: temporal
+    query: >
+      SELECT taxi_id, COUNT(*) AS report_count
+      FROM events
+      GROUP BY taxi_id
+      ORDER BY report_count DESC
+    is_alert: false
+    alert_format: ""
 # logic behind return_types. Right now, we could be returning aggregates (summarizing multiple data points into one numerical output) or spatial (coordinates that can get plotted on a graph)
