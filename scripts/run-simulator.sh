@@ -1,3 +1,5 @@
+cd ../src/simulator
+
 CONFIG_BUCKET=faastreams-config \
 CONFIG_OBJECT=query-config.yaml \
 PUBSUB_PROJECT_ID=faastreams \
