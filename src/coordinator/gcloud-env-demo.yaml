@@ -7,3 +7,5 @@ WORKER_URL: https://europe-west3-faastreams.cloudfunctions.net/worker-sid
 PUBSUB_PROJECT_ID: faastreams
 PUBSUB_TOPIC_ID: ais-stream
 PUBSUB_SUBSCRIPTION_ID: faas-input-sub
+CONFIG_BUCKET: faastreams-config
+CONFIG_OBJECT: query-config.yaml
