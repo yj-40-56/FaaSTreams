@@ -15,6 +15,7 @@ auth.json
 # IDEs
 .vscode/
 .idea/
+*.iml
 .mvn/
 target/
 
