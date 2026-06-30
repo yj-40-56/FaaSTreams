@@ -159,6 +159,9 @@ func (c *Coordinator) triggerWorker(windowStart, windowEnd time.Time, q config.Q
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("trigger worker %s: unexpected status %d", q.Name, resp.StatusCode)
+	}
 	return nil
 }
 
