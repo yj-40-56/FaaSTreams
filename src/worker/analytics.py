@@ -1,5 +1,4 @@
 import duckdb
-from zones import HAZARD_ZONES
 
 def run(records: list[dict], query: str, source: dict) -> list[dict]:
     columns = source["columns"]
@@ -58,6 +57,7 @@ def run(records: list[dict], query: str, source: dict) -> list[dict]:
         print(f"Error executing query: {e}", flush=True)
         raise
     finally:
+        print("Closing DuckDB connection.", flush=True)
         conn.close()
 
     return results

@@ -16,6 +16,8 @@ auth.json
 .vscode/
 .idea/
 *.iml
+.mvn/
+target/
 
 # Database files
 *.db
