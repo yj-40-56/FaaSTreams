@@ -1,0 +1,1 @@
+gcloud functions deploy data-sink-sid --gen2 --runtime python312 --region europe-west3 --memory 256Mi --source ../src/data-sink --entry-point handler --trigger-http --allow-unauthenticated --network default --subnet projects/faastreams/regions/europe-west3/subnetworks/default --env-vars-file ../env/gcloud-env-demo-data-sink.yaml --max-instances 10

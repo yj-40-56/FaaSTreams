@@ -8,7 +8,7 @@ JAR_NAME="ais-spe-1.0-SNAPSHOT.jar"
 
 mvn clean package -q
 
-gcloud compute scp target/$JAR_NAME $VM_NAME:$FLINK_DIR/ --zone=$ZONE
+gcloud compute scp ../src/benchmarks/flink/target/$JAR_NAME $VM_NAME:$FLINK_DIR/ --zone=$ZONE
 
 gcloud compute ssh $VM_NAME --zone=$ZONE --command="
   $FLINK_DIR/bin/flink list 2>/dev/null | grep RUNNING | awk '{print \$4}' | xargs -I{} $FLINK_DIR/bin/flink cancel {} 2>/dev/null || true

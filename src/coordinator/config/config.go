@@ -1,14 +1,14 @@
 package config
 
 import (
-	"embed"
+	"context"
+	"io"
 	"log"
+	"os"
 
+	"cloud.google.com/go/storage"
 	"gopkg.in/yaml.v3"
 )
-
-//go:embed config.yaml
-var embeddedConfig embed.FS
 
 // Query A config has several Queries, each with a name, SQL query and return type (aggregate, spatial, etc.)
 // This flat structure allows for more flexible query definitions, e.g. we can easily add more window types or other parameters later without changing the config structure
@@ -64,15 +64,34 @@ type Config struct {
 	Sources map[string]Source `yaml:"sources"`
 }
 
-// LoadConfig reads the query/window configuration bundled into the binary via go:embed.
+// LoadConfig reads the query/window configuration from a GCS bucket.
 func LoadConfig() Config {
-	file, err := embeddedConfig.ReadFile("config.yaml")
+	bucket := os.Getenv("CONFIG_BUCKET")
+	object := os.Getenv("CONFIG_OBJECT")
+	if bucket == "" || object == "" {
+		log.Fatal("[Config] CONFIG_BUCKET and CONFIG_OBJECT env vars required")
+	}
+
+	ctx := context.Background()
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		log.Fatalf("[Config] Failed to create GCS client: %v", err)
+	}
+	defer client.Close()
+
+	rc, err := client.Bucket(bucket).Object(object).NewReader(ctx)
+	if err != nil {
+		log.Fatalf("[Config] Failed to read config from GCS: %v", err)
+	}
+	defer rc.Close()
+
+	data, err := io.ReadAll(rc)
 	if err != nil {
 		log.Fatalf("[Config] Failed to read config file: %v", err)
 	}
 
 	var config Config
-	if err := yaml.Unmarshal(file, &config); err != nil {
+	if err := yaml.Unmarshal(data, &config); err != nil {
 		log.Fatalf("[Config] Failed to parse config file: %v", err)
 	}
 
