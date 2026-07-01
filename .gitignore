@@ -25,3 +25,6 @@ target/
 
 data/
 *.csv
+
+# Benchmark results (local only)
+terraform/results/*.json

@@ -1,0 +1,36 @@
+queries:
+  - name: vessel_count
+    window_type: tumbling
+    window_size: ${window_size}
+    query: "SELECT COUNT(DISTINCT MMSI) as vessel_count FROM events"
+    return_type: aggregate
+
+  - name: stationary_vessels
+    window_type: tumbling
+    window_size: ${window_size}
+    query: "SELECT COUNT(*) as stationary_count FROM events WHERE NavigationalStatus IN ('At anchor', 'Moored')"
+    return_type: aggregate
+
+  - name: avg_speed_by_type
+    window_type: tumbling
+    window_size: ${window_size}
+    query: "SELECT shipType, ROUND(AVG(SOG), 2) as avg_speed FROM events WHERE SOG IS NOT NULL GROUP BY shipType ORDER BY avg_speed DESC"
+    return_type: aggregate
+
+  - name: wind_exclusion_zone
+    window_type: tumbling
+    window_size: ${window_size}
+    query: "SELECT Name, MMSI, Latitude, Longitude, SOG FROM events WHERE Latitude BETWEEN 55.5 AND 56.0 AND Longitude BETWEEN 7.5 AND 8.0 AND SOG IS NOT NULL AND SOG > 0.5"
+    return_type: spatial
+
+  - name: kattegat_knn
+    window_type: tumbling
+    window_size: ${window_size}
+    query: "SELECT Name, MMSI, Latitude, Longitude, ROUND(SQRT(POWER(Latitude - 57.25, 2) + POWER(Longitude - 10.25, 2)), 4) as approx_distance FROM events WHERE Latitude IS NOT NULL ORDER BY approx_distance LIMIT 5"
+    return_type: spatial
+
+  - name: hazard_zones_proximity_alerts
+    window_type: tumbling
+    window_size: ${window_size}
+    query: "SELECT v.MMSI, v.Name, v.SOG, z.zone_name, ROUND(ST_Distance(ST_Transform(ST_Point(CAST(v.Longitude AS DOUBLE), CAST(v.Latitude AS DOUBLE)), 'EPSG:4326', 'EPSG:3857'), ST_Transform(ST_GeomFromText(z.geom_wkt), 'EPSG:4326', 'EPSG:3857')) / 1852.0, 2) AS distance_nm FROM events v CROSS JOIN zones z WHERE v.Latitude IS NOT NULL AND ST_Distance(ST_Transform(ST_Point(CAST(v.Longitude AS DOUBLE), CAST(v.Latitude AS DOUBLE)), 'EPSG:4326', 'EPSG:3857'), ST_Transform(ST_GeomFromText(z.geom_wkt), 'EPSG:4326', 'EPSG:3857')) / 1852.0 < z.threshold_nm ORDER BY distance_nm"
+    return_type: spatial
