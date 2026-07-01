@@ -64,7 +64,7 @@ type Config struct {
 	Sources map[string]Source `yaml:"sources"`
 }
 
-// LoadConfig reads the query/window configuration bundled into the binary via go:embed.
+// LoadConfig reads the query/window configuration from a GCS bucket.
 func LoadConfig() Config {
 	bucket := os.Getenv("CONFIG_BUCKET")
 	object := os.Getenv("CONFIG_OBJECT")
