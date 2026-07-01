@@ -1,4 +1,4 @@
-package main
+package windower
 
 import (
 	"bytes"
@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
-	"github.com/mardentub/coordinator/config"
+	"github.com/mardentub/windower/config"
 	"github.com/redis/go-redis/v9"
 )
 

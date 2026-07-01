@@ -1,4 +1,4 @@
-package main
+package ingestor
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
 	"github.com/cloudevents/sdk-go/v2/event"
-	"github.com/mardentub/coordinator/config"
+	"github.com/mardentub/ingestor/config"
 	"github.com/redis/go-redis/v9"
 )
 

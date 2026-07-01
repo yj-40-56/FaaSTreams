@@ -1,0 +1,2 @@
+REDIS_URL: 10.101.64.19:6379
+WORKER_URL: https://europe-west3-faastreams.cloudfunctions.net/worker-mat
