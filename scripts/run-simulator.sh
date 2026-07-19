@@ -10,3 +10,5 @@ CONFIG_BUCKET=faastreams-config \
   SIM_RUNTIME=2m \
   SIM_SCALE_FACTOR=24 \
   go run .
+# 12 stunden of data in 3 stunden durchlaufen lassen
+# andere region nutzen

@@ -25,7 +25,7 @@ public class RedisSink extends RichSinkFunction<String> {
         try {
             var node = om.readTree(value);
             double score = node.get("window_start").asDouble();
-            jedis.zadd("analytics-results", score, value);
+            jedis.zadd("flink-results", score, value);
             System.out.printf("Window %s: vessels=%s records=%s latency=%sms%n",
                     node.get("window_start").asText(),
                     node.get("vessel_count").asText(),

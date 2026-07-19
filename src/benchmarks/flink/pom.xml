@@ -63,6 +63,18 @@
             <artifactId>flink-table-planner-loader</artifactId>
             <version>1.19.3</version>
         </dependency>
+
+        <dependency>
+            <groupId>org.apache.sedona</groupId>
+            <artifactId>sedona-flink_2.12</artifactId>
+            <version>1.7.0</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.datasyslab</groupId>
+            <artifactId>geotools-wrapper</artifactId>
+            <version>1.7.0-28.5</version>
+        </dependency>
     </dependencies>
 
     <build>

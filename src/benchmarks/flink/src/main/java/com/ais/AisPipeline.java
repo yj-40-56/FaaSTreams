@@ -10,10 +10,11 @@ import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.api.Table;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
+import org.apache.sedona.flink.SedonaFlinkRegistrator;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 
 public class AisPipeline {
 
@@ -21,7 +22,28 @@ public class AisPipeline {
     static final String SUB        = "spe-input-sub";
     static final String REDIS_HOST = "10.101.64.19";
     static final int    REDIS_PORT = 6379;
-    static final String QUERY      = "SELECT COUNT(DISTINCT mmsi) as vessel_count FROM vessels";
+
+    static final String QUERY = """
+            SELECT
+              v.mmsi,
+              v.sog,
+              v.ts,
+              t.tower_name,
+              t.threshold_nm,
+              ROUND(
+                ST_Distance(
+                  ST_Transform(ST_Point(v.longitude, v.latitude), 'EPSG:4326', 'EPSG:3857'),
+                  ST_Transform(ST_GeomFromText(t.geom_wkt),       'EPSG:4326', 'EPSG:3857')
+                ) / 1852.0, 2
+              ) AS distance_nm
+            FROM vessels v
+            CROSS JOIN towers t
+            WHERE v.latitude IS NOT NULL
+              AND ST_Distance(
+                    ST_Transform(ST_Point(v.longitude, v.latitude), 'EPSG:4326', 'EPSG:3857'),
+                    ST_Transform(ST_GeomFromText(t.geom_wkt),       'EPSG:4326', 'EPSG:3857')
+                  ) / 1852.0 < t.threshold_nm
+            """;
 
     public static void main(String[] args) throws Exception {
         StreamExecutionEnvironment env =
@@ -29,6 +51,9 @@ public class AisPipeline {
         env.setParallelism(1);
 
         StreamTableEnvironment tableEnv = StreamTableEnvironment.create(env);
+
+        SedonaFlinkRegistrator.registerType(env);
+        SedonaFlinkRegistrator.registerFunc(tableEnv);
 
         DataStream<Row> rowStream = env
                 .addSource(new PubSubSource(PROJECT, SUB))
@@ -59,34 +84,38 @@ public class AisPipeline {
                         .build()
         );
 
-        Table resultTable = tableEnv.sqlQuery("""
-                SELECT
-                    TUMBLE_START(proctime, INTERVAL '30' SECOND) as window_start,
-                    TUMBLE_END(proctime,   INTERVAL '30' SECOND) as window_end,
-                    COUNT(DISTINCT mmsi) as vessel_count
-                FROM vessels
-                GROUP BY TUMBLE(proctime, INTERVAL '30' SECOND)
-                """);
+        tableEnv.createTemporaryView("towers", buildTowersTable(tableEnv));
 
-        // Table → DataStream → RedisSink
+        Table resultTable = tableEnv.sqlQuery(QUERY);
+
         tableEnv.toDataStream(resultTable)
                 .map(row -> {
                     ObjectMapper om = new ObjectMapper();
                     ObjectNode result = om.createObjectNode();
 
-                    LocalDateTime windowStart = (LocalDateTime) row.getField("window_start");
-                    LocalDateTime windowEnd   = (LocalDateTime) row.getField("window_end");
-                    long startEpoch = windowStart.toEpochSecond(ZoneOffset.UTC);
-                    long endEpoch   = windowEnd.toEpochSecond(ZoneOffset.UTC);
-                    long nowMs      = Instant.now().toEpochMilli();
+                    String mmsi       = (String) row.getField("mmsi");
+                    Double sog        = (Double) row.getField("sog");
+                    String ts         = (String) row.getField("ts");
+                    String towerName  = (String) row.getField("tower_name");
+                    Double thresholdNm = (Double) row.getField("threshold_nm");
+                    Double distanceNm = (Double) row.getField("distance_nm");
 
-                    result.put("pipeline",     "spe-flink");
-                    result.put("query",        QUERY);
-                    result.put("window_start", startEpoch);
-                    result.put("window_end",   endEpoch);
-                    result.put("vessel_count", (Long) row.getField("vessel_count"));
-                    result.put("latency_ms",   nowMs - (endEpoch * 1000));
-                    result.put("computed_at",  Instant.now().toString());
+                    String alertMsg = String.format(
+                            "VESSEL %s passed within %s nm of %s | sog=%s kn | ts=%s",
+                            mmsi, distanceNm, towerName, sog, ts
+                    );
+
+                    result.put("pipeline",      "spe-flink");
+                    result.put("query",         QUERY);
+                    result.put("mmsi",          mmsi);
+                    result.put("sog",           sog);
+                    result.put("ts",            ts);
+                    result.put("tower_name",    towerName);
+                    result.put("threshold_nm",  thresholdNm);
+                    result.put("distance_nm",   distanceNm);
+                    result.put("is_alert",      true);
+                    result.put("alert_message", alertMsg);
+                    result.put("computed_at",   Instant.now().toString());
 
                     return om.writeValueAsString(result);
                 })
@@ -94,5 +123,21 @@ public class AisPipeline {
                 .addSink(new RedisSink(REDIS_HOST, REDIS_PORT));
 
         env.execute("AIS SPE Pipeline");
+    }
+
+    private static Table buildTowersTable(StreamTableEnvironment tableEnv) {
+        List<Row> towerRows = new ArrayList<>();
+        towerRows.add(Row.of("Tower Alpha", "POINT(10.2 57.1)", 5.0));
+        towerRows.add(Row.of("Tower Beta",  "POINT(7.8 55.7)",  5.0));
+        towerRows.add(Row.of("Tower Gamma", "POINT(10.7 58.2)", 5.0));
+
+        return tableEnv.fromValues(
+                DataTypes.ROW(
+                        DataTypes.FIELD("tower_name",   DataTypes.STRING()),
+                        DataTypes.FIELD("geom_wkt",      DataTypes.STRING()),
+                        DataTypes.FIELD("threshold_nm",  DataTypes.DOUBLE())
+                ),
+                towerRows
+        );
     }
 }
