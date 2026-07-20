@@ -1,0 +1,635 @@
+{
+  "env": "baseline",
+  "env_name": "baseline",
+  "window_size_seconds": 60,
+  "window": "15:12:59 - 15:13:59",
+  "event_count": 3443,
+  "logged_at": "2026-06-28T13:14:11.759568Z",
+  "saved_at": "2026-06-28T16:06:56.549043Z",
+  "queries": {
+    "hazard_zones_proximity_alerts": [
+      {
+        "MMSI": "219001083",
+        "Name": "ALBA",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "219329000",
+        "Name": "",
+        "SOG": 3.0,
+        "zone_name": "Offshore Wind Exclusion North Sea",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "261004881",
+        "Name": "",
+        "SOG": 1.8,
+        "zone_name": "Offshore Wind Exclusion North Sea",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "305279000",
+        "Name": "",
+        "SOG": 7.2,
+        "zone_name": "Offshore Wind Exclusion North Sea",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "219329000",
+        "Name": "",
+        "SOG": 3.5,
+        "zone_name": "Offshore Wind Exclusion North Sea",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "261004881",
+        "Name": "",
+        "SOG": 1.0,
+        "zone_name": "Offshore Wind Exclusion North Sea",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "219801000",
+        "Name": "",
+        "SOG": 2.2,
+        "zone_name": "Restricted Zone Skagerrak",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "219013485",
+        "Name": "",
+        "SOG": 2.7,
+        "zone_name": "Restricted Zone Skagerrak",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "538006198",
+        "Name": "",
+        "SOG": 0.8,
+        "zone_name": "Restricted Zone Skagerrak",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "219801000",
+        "Name": "",
+        "SOG": 2.2,
+        "zone_name": "Restricted Zone Skagerrak",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "538005194",
+        "Name": "",
+        "SOG": 12.5,
+        "zone_name": "Military Exercise Area Bornholm",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "352003286",
+        "Name": "",
+        "SOG": 12.8,
+        "zone_name": "Military Exercise Area Bornholm",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "210382000",
+        "Name": "",
+        "SOG": 10.3,
+        "zone_name": "Military Exercise Area Bornholm",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "256336000",
+        "Name": "ECO UMANDE",
+        "SOG": 12.7,
+        "zone_name": "Military Exercise Area Bornholm",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "538005194",
+        "Name": "",
+        "SOG": 12.5,
+        "zone_name": "Military Exercise Area Bornholm",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "257754000",
+        "Name": "",
+        "SOG": 11.2,
+        "zone_name": "Military Exercise Area Bornholm",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "352003286",
+        "Name": "",
+        "SOG": 12.8,
+        "zone_name": "Military Exercise Area Bornholm",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "305279000",
+        "Name": "",
+        "SOG": 7.2,
+        "zone_name": "Offshore Wind Exclusion North Sea",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "219002624",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Offshore Wind Exclusion North Sea",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "219329000",
+        "Name": "",
+        "SOG": 3.4,
+        "zone_name": "Offshore Wind Exclusion North Sea",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "261004881",
+        "Name": "",
+        "SOG": 0.9,
+        "zone_name": "Offshore Wind Exclusion North Sea",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "305279000",
+        "Name": "",
+        "SOG": 7.1,
+        "zone_name": "Offshore Wind Exclusion North Sea",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "219002624",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Offshore Wind Exclusion North Sea",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "256683000",
+        "Name": "",
+        "SOG": 0.7,
+        "zone_name": "Restricted Zone Skagerrak",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "219801000",
+        "Name": "",
+        "SOG": 2.2,
+        "zone_name": "Restricted Zone Skagerrak",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "219023313",
+        "Name": "",
+        "SOG": 2.6,
+        "zone_name": "Restricted Zone Skagerrak",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "219023738",
+        "Name": "",
+        "SOG": 2.3,
+        "zone_name": "Restricted Zone Skagerrak",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "538006198",
+        "Name": "",
+        "SOG": 0.8,
+        "zone_name": "Restricted Zone Skagerrak",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "538005194",
+        "Name": "",
+        "SOG": 12.5,
+        "zone_name": "Military Exercise Area Bornholm",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "256336000",
+        "Name": "ECO UMANDE",
+        "SOG": 12.7,
+        "zone_name": "Military Exercise Area Bornholm",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "352003286",
+        "Name": "",
+        "SOG": 12.8,
+        "zone_name": "Military Exercise Area Bornholm",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "538005194",
+        "Name": "",
+        "SOG": 12.5,
+        "zone_name": "Military Exercise Area Bornholm",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "256336000",
+        "Name": "ECO UMANDE",
+        "SOG": 12.7,
+        "zone_name": "Military Exercise Area Bornholm",
+        "distance_nm": 0.0
+      },
+      {
+        "MMSI": "220088000",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.07
+      },
+      {
+        "MMSI": "220088000",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.07
+      },
+      {
+        "MMSI": "220088000",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.07
+      },
+      {
+        "MMSI": "219024715",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.11
+      },
+      {
+        "MMSI": "219024715",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.11
+      },
+      {
+        "MMSI": "219006248",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.14
+      },
+      {
+        "MMSI": "219006248",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.14
+      },
+      {
+        "MMSI": "219015617",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.23
+      },
+      {
+        "MMSI": "219015617",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.23
+      },
+      {
+        "MMSI": "219015617",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.23
+      },
+      {
+        "MMSI": "219015617",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.23
+      },
+      {
+        "MMSI": "219007036",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.29
+      },
+      {
+        "MMSI": "219007036",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.29
+      },
+      {
+        "MMSI": "220072000",
+        "Name": "",
+        "SOG": null,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.3
+      },
+      {
+        "MMSI": "220072000",
+        "Name": "",
+        "SOG": null,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.3
+      },
+      {
+        "MMSI": "220076700",
+        "Name": "",
+        "SOG": 0.1,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.35
+      },
+      {
+        "MMSI": "220076700",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.35
+      },
+      {
+        "MMSI": "219904000",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.44
+      },
+      {
+        "MMSI": "219904000",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.44
+      },
+      {
+        "MMSI": "219904000",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.44
+      },
+      {
+        "MMSI": "219000872",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.55
+      },
+      {
+        "MMSI": "219000873",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.55
+      },
+      {
+        "MMSI": "219000872",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.55
+      },
+      {
+        "MMSI": "219000873",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.55
+      },
+      {
+        "MMSI": "219000872",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.55
+      },
+      {
+        "MMSI": "219000873",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.55
+      },
+      {
+        "MMSI": "219000872",
+        "Name": "M/F HALS EGENSE",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 0.55
+      },
+      {
+        "MMSI": "266220000",
+        "Name": "",
+        "SOG": 0.6,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 1.97
+      },
+      {
+        "MMSI": "219000942",
+        "Name": "",
+        "SOG": 0.1,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 1.97
+      },
+      {
+        "MMSI": "219000942",
+        "Name": "",
+        "SOG": 0.0,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 1.97
+      },
+      {
+        "MMSI": "219000942",
+        "Name": "",
+        "SOG": 0.1,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 1.97
+      },
+      {
+        "MMSI": "266220000",
+        "Name": "",
+        "SOG": 0.6,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 1.98
+      },
+      {
+        "MMSI": "266220000",
+        "Name": "",
+        "SOG": 0.6,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 1.98
+      },
+      {
+        "MMSI": "266220000",
+        "Name": "",
+        "SOG": 0.6,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 1.98
+      },
+      {
+        "MMSI": "266220000",
+        "Name": "",
+        "SOG": 0.6,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 1.98
+      },
+      {
+        "MMSI": "266220000",
+        "Name": "",
+        "SOG": 0.6,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 1.98
+      },
+      {
+        "MMSI": "266220000",
+        "Name": "",
+        "SOG": 0.7,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 1.98
+      },
+      {
+        "MMSI": "266220000",
+        "Name": "",
+        "SOG": 0.7,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 1.98
+      },
+      {
+        "MMSI": "266220000",
+        "Name": "",
+        "SOG": 0.7,
+        "zone_name": "Subsea Pipeline Corridor Kattegat",
+        "distance_nm": 1.98
+      }
+    ],
+    "vessel_count": [
+      {
+        "vessel_count": 1266
+      }
+    ],
+    "stationary_vessels": [
+      {
+        "stationary_count": 115
+      }
+    ],
+    "kattegat_knn": [
+      {
+        "Name": "",
+        "MMSI": "219000873",
+        "Latitude": 56.990913,
+        "Longitude": 10.30455,
+        "approx_distance": 0.2648
+      },
+      {
+        "Name": "",
+        "MMSI": "219000873",
+        "Latitude": 56.990908,
+        "Longitude": 10.304545,
+        "approx_distance": 0.2648
+      },
+      {
+        "Name": "",
+        "MMSI": "219000873",
+        "Latitude": 56.990908,
+        "Longitude": 10.304543,
+        "approx_distance": 0.2648
+      },
+      {
+        "Name": "",
+        "MMSI": "219000872",
+        "Latitude": 56.99091,
+        "Longitude": 10.308297,
+        "approx_distance": 0.2656
+      },
+      {
+        "Name": "",
+        "MMSI": "219000872",
+        "Latitude": 56.990898,
+        "Longitude": 10.308282,
+        "approx_distance": 0.2656
+      }
+    ],
+    "avg_speed_by_type": [
+      {
+        "shipType": "",
+        "avg_speed": 4.75
+      }
+    ],
+    "wind_exclusion_zone": [
+      {
+        "Name": "",
+        "MMSI": "219329000",
+        "Latitude": 55.687947,
+        "Longitude": 7.886027,
+        "SOG": 3.0
+      },
+      {
+        "Name": "",
+        "MMSI": "261004881",
+        "Latitude": 55.979712,
+        "Longitude": 7.981765,
+        "SOG": 1.8
+      },
+      {
+        "Name": "",
+        "MMSI": "305279000",
+        "Latitude": 55.733978,
+        "Longitude": 7.84568,
+        "SOG": 7.2
+      },
+      {
+        "Name": "",
+        "MMSI": "219329000",
+        "Latitude": 55.68809,
+        "Longitude": 7.886028,
+        "SOG": 3.5
+      },
+      {
+        "Name": "",
+        "MMSI": "261004881",
+        "Latitude": 55.97975,
+        "Longitude": 7.981773,
+        "SOG": 1.0
+      },
+      {
+        "Name": "",
+        "MMSI": "305279000",
+        "Latitude": 55.733613,
+        "Longitude": 7.845612,
+        "SOG": 7.2
+      },
+      {
+        "Name": "",
+        "MMSI": "219329000",
+        "Latitude": 55.688265,
+        "Longitude": 7.886035,
+        "SOG": 3.4
+      },
+      {
+        "Name": "",
+        "MMSI": "261004881",
+        "Latitude": 55.979803,
+        "Longitude": 7.981763,
+        "SOG": 0.9
+      },
+      {
+        "Name": "",
+        "MMSI": "305279000",
+        "Latitude": 55.73329,
+        "Longitude": 7.845505,
+        "SOG": 7.1
+      }
+    ]
+  }
+}

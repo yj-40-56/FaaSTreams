@@ -1,6 +1,18 @@
-.git
+# Local-only: virtualenv, generated datasets/analysis artifacts, git history, python caches.
+# The Cloud Run worker (src/worker/) only needs its own source files plus
+# src/worker/requirements.txt (see docker/worker/Dockerfile) - none of this is read at
+# build or run time.
+.venv/
+venv/
 data/
+scripts/local-data-analysis/
 *.csv
-node_modules/
-target/
-flink/
+*.png
+.git/
+__pycache__/
+*.pyc
+.gcloudignore
+
+# Terraform state, provider binaries (~116MB), and packaged function zips - infra-as-code,
+# not part of the container image.
+terraform/

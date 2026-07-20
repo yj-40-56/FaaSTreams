@@ -1,0 +1,1 @@
+{"Modules":[{"Key":"","Source":"","Dir":"."},{"Key":"coordinator","Source":"./modules/coordinator","Dir":"modules/coordinator"},{"Key":"data_sink","Source":"./modules/data_sink","Dir":"modules/data_sink"},{"Key":"pubsub","Source":"./modules/pubsub","Dir":"modules/pubsub"},{"Key":"worker","Source":"./modules/worker","Dir":"modules/worker"}]}

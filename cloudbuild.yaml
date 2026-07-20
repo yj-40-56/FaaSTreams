@@ -1,0 +1,11 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'europe-west3-docker.pkg.dev/faastreams/cloud-run/worker'
+      - '-f'
+      - 'docker/worker/Dockerfile'
+      - '.'
+images:
+  - 'europe-west3-docker.pkg.dev/faastreams/cloud-run/worker'
