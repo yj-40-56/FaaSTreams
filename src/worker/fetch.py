@@ -1,6 +1,5 @@
 import json
 import os
-import json
 import redis
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
@@ -10,7 +9,9 @@ DATA_KEY_PREFIX = "data"  # matches ingestor's dataKey const (cmd/coordinator/in
 def fetch_window(window_start: int, window_end: int, data_source: str) -> list[dict]:
     r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
     key = f"{DATA_KEY_PREFIX}:{data_source}"
-    members = r.zrangebyscore(key, window_start, window_end)
+    # Windowing uses [start, end). Redis ranges are inclusive by default, so
+    # make the upper bound exclusive to avoid processing boundary events twice.
+    members = r.zrangebyscore(key, window_start, f"({window_end}")
     print(f"[Fetch] Found {len(members)} member(s) in '{key}' for {window_start}-{window_end}", flush=True)
     return [json.loads(m) for m in members]
 
