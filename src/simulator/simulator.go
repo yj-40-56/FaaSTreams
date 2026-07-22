@@ -50,6 +50,13 @@ func (s *Simulator) Run(ctx context.Context) {
 		return
 	}
 
+	// Blackout window: drop all events whose original CSV timestamp falls into this window,
+	// simulating a real gap in the data.
+	// Just set these two values directly for your run (CSV hour X to Y where the gap should be):
+	blackoutStart := 8 * time.Hour
+	blackoutEnd := 16 * time.Hour
+	var blackoutApplied bool
+
 	simulationStartReal := time.Now()
 	var firstTimestampCSV, lastTimestampCSV time.Time
 	var initialized bool
@@ -100,6 +107,21 @@ func (s *Simulator) Run(ctx context.Context) {
 		lastTimestampCSV = currentTimeCSV
 
 		elapsedTimeCSV := currentTimeCSV.Sub(firstTimestampCSV)
+
+		// If this event falls inside the blackout window (second hour), drop it.
+		// The first time we enter the window, sleep for the full blackout duration once,
+		// then keep dropping rows still inside it, then resume normally afterwards.
+		if elapsedTimeCSV >= blackoutStart && elapsedTimeCSV < blackoutEnd {
+			if !blackoutApplied {
+				blackoutDuration := blackoutEnd - blackoutStart
+				scaledBlackoutDuration := time.Duration(float64(blackoutDuration) / s.source.ScaleFactor)
+				time.Sleep(scaledBlackoutDuration)
+				simulationStartReal = simulationStartReal.Add(scaledBlackoutDuration)
+				blackoutApplied = true
+			}
+			continue // drop this row, don't publish
+		}
+
 		scaledElapsedTime := time.Duration(float64(elapsedTimeCSV) / s.source.ScaleFactor)
 		newTimestamp := simulationStartReal.Add(scaledElapsedTime)
 

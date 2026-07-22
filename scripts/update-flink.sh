@@ -8,15 +8,15 @@ JAR_NAME="ais-spe-1.0-SNAPSHOT.jar"
 
 mvn -f ../src/benchmarks/flink/pom.xml clean package -q
 
-echo "Uploading JAR..."
+echo "Upload JAR"
 gcloud compute scp ../src/benchmarks/flink/target/$JAR_NAME $VM_NAME:$FLINK_DIR/ --zone=$ZONE
 
-echo "Cancelling old jobs..."
+echo "Cancel old jobs..."
 gcloud compute ssh $VM_NAME --zone=$ZONE --command="
   timeout 20 $FLINK_DIR/bin/flink list 2>/dev/null | grep RUNNING | awk '{print \$4}' | xargs -r -I{} $FLINK_DIR/bin/flink cancel {} || true
 "
 
-echo "Restarting Flink..."
+echo "Restart Flink..."
 gcloud compute ssh $VM_NAME --zone=$ZONE --command="
   $FLINK_DIR/bin/stop-cluster.sh || true
   sleep 2
@@ -24,7 +24,7 @@ gcloud compute ssh $VM_NAME --zone=$ZONE --command="
   sleep 3
 "
 
-echo "Submitting job..."
+echo "Submit job..."
 gcloud compute ssh $VM_NAME --zone=$ZONE --command="
   $FLINK_DIR/bin/flink run -d -c com.ais.AisPipeline $FLINK_DIR/$JAR_NAME
 "

@@ -19,10 +19,11 @@ import java.util.List;
 public class AisPipeline {
 
     static final String PROJECT    = "faastreams";
-    static final String SUB        = "spe-input-sub";
+    static final String SUB        = "spe-sub";
     static final String REDIS_HOST = "10.101.64.19";
     static final int    REDIS_PORT = 6379;
 
+    static final String QUERY_NAME = "vessels_near_towers";
     static final String QUERY = """
             SELECT
               v.mmsi,
@@ -39,6 +40,8 @@ public class AisPipeline {
             FROM vessels v
             CROSS JOIN towers t
             WHERE v.latitude IS NOT NULL
+              AND v.latitude BETWEEN -85 AND 85
+              AND v.longitude BETWEEN -180 AND 180
               AND ST_Distance(
                     ST_Transform(ST_Point(v.longitude, v.latitude), 'EPSG:4326', 'EPSG:3857'),
                     ST_Transform(ST_GeomFromText(t.geom_wkt),       'EPSG:4326', 'EPSG:3857')
@@ -106,7 +109,7 @@ public class AisPipeline {
                     );
 
                     result.put("pipeline",      "spe-flink");
-                    result.put("query",         QUERY);
+                    result.put("query",         QUERY_NAME);
                     result.put("mmsi",          mmsi);
                     result.put("sog",           sog);
                     result.put("ts",            ts);

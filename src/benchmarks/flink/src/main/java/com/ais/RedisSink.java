@@ -23,17 +23,22 @@ public class RedisSink extends RichSinkFunction<String> {
         com.fasterxml.jackson.databind.ObjectMapper om =
                 new com.fasterxml.jackson.databind.ObjectMapper();
         try {
-            var node = om.readTree(value);
-            double score = node.get("window_start").asDouble();
+//            var node = om.readTree(value);
+
+            double score = System.currentTimeMillis();
+
             jedis.zadd("flink-results", score, value);
-            System.out.printf("Window %s: vessels=%s records=%s latency=%sms%n",
-                    node.get("window_start").asText(),
-                    node.get("vessel_count").asText(),
-                    node.get("records_processed").asText(),
-                    node.get("latency_ms").asText()
-            );
+
+//            System.out.printf("ALERT mmsi=%s tower=%s distance_nm=%s sog=%s ts=%s%n",
+//                    node.path("mmsi").asText("?"),
+//                    node.path("tower_name").asText("?"),
+//                    node.path("distance_nm").asText("?"),
+//                    node.path("sog").asText("?"),
+//                    node.path("ts").asText("?")
+//            );
         } catch (Exception e) {
             System.err.println("RedisSink error: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 

@@ -7,8 +7,6 @@ CONFIG_BUCKET=faastreams-config \
   PUBSUB_PROJECT_ID=faastreams \
   PUBSUB_TOPIC_ID=ais-stream \
   SOURCE_NAME=ais_data_v1 \
-  SIM_RUNTIME=2m \
+  SIM_RUNTIME=180m \
   SIM_SCALE_FACTOR=24 \
   go run .
-# 12 stunden of data in 3 stunden durchlaufen lassen
-# andere region nutzen
