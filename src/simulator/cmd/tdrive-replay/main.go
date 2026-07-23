@@ -40,16 +40,17 @@ type publishResult struct {
 
 func main() {
 	var (
-		projectID     = flag.String("project", "faastreams", "Google Cloud project ID")
-		topicID       = flag.String("topic", "ais-stream", "Pub/Sub topic used by the ingestor")
-		sourceName    = flag.String("source", "tdrive_data_v1", "_source value configured for ingestor/windower")
-		inputPath     = flag.String("input", "../../data/tdrive_workload_volatile.csv", "prepared T-Drive workload CSV")
-		resultsPath   = flag.String("results", "../../results_tdrive_replay.csv", "publish-integrity CSV")
-		windowerURL   = flag.String("windower-url", "", "HTTP URL of ProcessWindows (required unless --dry-run)")
-		windowerEvery = flag.Duration("windower-every", time.Second, "interval between ProcessWindows calls")
-		drainTime     = flag.Duration("drain-time", 70*time.Second, "time to keep invoking the windower after the final event")
-		runDuration   = flag.Float64("run-duration", 0, "total replay duration in seconds, including a final quiet period (default: last event offset)")
-		dryRun        = flag.Bool("dry-run", false, "validate the complete workload without contacting Google Cloud")
+		projectID         = flag.String("project", "faastreams", "Google Cloud project ID")
+		topicID           = flag.String("topic", "ais-stream", "Pub/Sub topic used by the ingestor")
+		sourceName        = flag.String("source", "tdrive_data_v1", "_source value configured for ingestor/windower")
+		inputPath         = flag.String("input", "../../data/tdrive_workload_volatile.csv", "prepared T-Drive workload CSV")
+		resultsPath       = flag.String("results", "../../results_tdrive_replay.csv", "publish-integrity CSV")
+		triggerURL        = flag.String("trigger-url", "", "HTTP URL to POST to on an interval - windower's ProcessWindows under push, or ingestor-pull's IngestPull under pull (required unless --dry-run or --poll-trigger=false)")
+		enableTriggerPoll = flag.Bool("poll-trigger", true, "poll --trigger-url on an interval. Under the pull ingestor, point --trigger-url at ingestor-pull instead of windower - each tick drains the subscription and triggers ProcessWindows itself")
+		triggerEvery      = flag.Duration("trigger-every", time.Second, "interval between --trigger-url calls")
+		drainTime         = flag.Duration("drain-time", 70*time.Second, "time to keep invoking --trigger-url after the final event")
+		runDuration       = flag.Float64("run-duration", 0, "total replay duration in seconds, including a final quiet period (default: last event offset)")
+		dryRun            = flag.Bool("dry-run", false, "validate the complete workload without contacting Google Cloud")
 	)
 	flag.Parse()
 
@@ -71,11 +72,11 @@ func main() {
 		log.Printf("dry-run complete; no messages sent and no HTTP endpoints called")
 		return
 	}
-	if strings.TrimSpace(*windowerURL) == "" {
-		log.Fatal("--windower-url is required: without it the replay stops at Redis and is not an end-to-end test")
+	if *enableTriggerPoll && strings.TrimSpace(*triggerURL) == "" {
+		log.Fatal("--trigger-url is required unless --poll-trigger=false: without it the replay stops at Redis and is not an end-to-end test")
 	}
-	if *windowerEvery <= 0 || *drainTime < 0 {
-		log.Fatal("--windower-every must be positive and --drain-time cannot be negative")
+	if *triggerEvery <= 0 || *drainTime < 0 {
+		log.Fatal("--trigger-every must be positive and --drain-time cannot be negative")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -102,12 +103,18 @@ func main() {
 
 	start := time.Now()
 	pollerDone := make(chan error, 1)
-	go func() {
-		// Poll only through the final data window and its drain allowance. The
-		// remaining train-day shutdown must be genuinely idle so the windower can
-		// scale down along with the other pipeline stages.
-		pollerDone <- pollWindower(ctx, *windowerURL, *windowerEvery, start.Add(seconds(lastEventOffset)).Add(*drainTime))
-	}()
+	if *enableTriggerPoll {
+		go func() {
+			// Poll only through the final data window and its drain allowance. The
+			// remaining train-day shutdown must be genuinely idle so the target
+			// (windower or ingestor-pull) can scale down along with the other
+			// pipeline stages.
+			pollerDone <- pollTrigger(ctx, *triggerURL, *triggerEvery, start.Add(seconds(lastEventOffset)).Add(*drainTime))
+		}()
+	} else {
+		log.Printf("--poll-trigger=false: not polling --trigger-url")
+		pollerDone <- nil
+	}
 
 	var acknowledgements sync.WaitGroup
 	var ackFailures atomic.Int64
@@ -157,10 +164,10 @@ func main() {
 		log.Fatalf("write results: %v", err)
 	}
 	if err := <-pollerDone; err != nil {
-		log.Fatalf("windower integrity failure: %v", err)
+		log.Fatalf("trigger integrity failure: %v", err)
 	}
 	if wait := time.Until(start.Add(seconds(duration))); wait > 0 {
-		log.Printf("final shutdown: waiting %.1f minutes with no publishes or windower calls", wait.Minutes())
+		log.Printf("final shutdown: waiting %.1f minutes with no publishes or trigger calls", wait.Minutes())
 		time.Sleep(wait)
 	}
 	sort.Float64s(sendLags)
@@ -264,7 +271,7 @@ func writeResults(path string, results <-chan publishResult) error {
 	return buffer.Flush()
 }
 
-func pollWindower(ctx context.Context, url string, every time.Duration, until time.Time) error {
+func pollTrigger(ctx context.Context, url string, every time.Duration, until time.Time) error {
 	client := &http.Client{Timeout: 30 * time.Second}
 	var calls, failures atomic.Int64
 	for time.Now().Before(until) {
@@ -277,21 +284,21 @@ func pollWindower(ctx context.Context, url string, every time.Duration, until ti
 		calls.Add(1)
 		if err != nil {
 			failures.Add(1)
-			log.Printf("windower call failed: %v", err)
+			log.Printf("trigger call failed: %v", err)
 		} else {
 			io.Copy(io.Discard, response.Body)
 			response.Body.Close()
 			if response.StatusCode >= 300 {
 				failures.Add(1)
-				log.Printf("windower returned HTTP %d", response.StatusCode)
+				log.Printf("trigger call returned HTTP %d", response.StatusCode)
 			}
 		}
 		time.Sleep(every)
 	}
 	if failures.Load() > 0 {
-		return fmt.Errorf("%d/%d windower calls failed", failures.Load(), calls.Load())
+		return fmt.Errorf("%d/%d trigger calls failed", failures.Load(), calls.Load())
 	}
-	log.Printf("windower calls: %d successful", calls.Load())
+	log.Printf("trigger calls: %d successful", calls.Load())
 	return nil
 }
 
