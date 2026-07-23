@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"simulator/config"
@@ -32,6 +33,15 @@ func main() {
 	source, ok := cfg.Sources[sourceName]
 	if !ok {
 		log.Fatalf("[Sim] Unknown source %q — check SOURCE_NAME and config.yaml", sourceName)
+	}
+
+	if raw := os.Getenv("SIM_SCALE_FACTOR"); raw != "" {
+		scaleFactor, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			log.Fatalf("[Sim] Invalid SIM_SCALE_FACTOR %q: %v", raw, err)
+		}
+		log.Printf("[Sim] Overriding scale_factor from config (%.1f) with SIM_SCALE_FACTOR=%.1f", source.ScaleFactor, scaleFactor)
+		source.ScaleFactor = scaleFactor
 	}
 
 	client, err := pubsub.NewClient(ctx, projectID)

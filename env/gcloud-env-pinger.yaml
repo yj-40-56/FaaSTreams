@@ -1,0 +1,4 @@
+GCP_PROJECT: "faastreams"
+GCP_REGION: "europe-west3"
+TASKS_QUEUE: "faastreams-queue"
+WINDOWER_URL: "https://europe-west3-faastreams.cloudfunctions.net/windower"

@@ -1,0 +1,6 @@
+REDIS_URL: 10.101.64.19:6379
+CONFIG_BUCKET: faastreams-config
+CONFIG_OBJECT: query-config.yaml
+PUBSUB_PROJECT_ID: faastreams
+PUBSUB_PULL_SUBSCRIPTION_ID: ais-stream-pull
+WINDOWER_URL: https://europe-west3-faastreams.cloudfunctions.net/windower

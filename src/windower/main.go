@@ -98,7 +98,7 @@ func processWindows(w http.ResponseWriter, r *http.Request) {
 	for _, q := range coord.config.Queries {
 
 		_, exists := coord.config.Sources[q.DataSource]
-		if !exists {
+		if q.DataSource != "generic" && !exists {
 			log.Printf("[Windower] Skipping query %q: source %q is not active/defined in 'sources'", q.Name, q.DataSource)
 			continue
 		}

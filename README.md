@@ -107,6 +107,23 @@ PUBSUB_PROJECT_ID=faastreams PUBSUB_TOPIC_ID=ais-stream CONFIG_BUCKET=faastreams
   CONFIG_OBJECT=query-config.yaml SOURCE_NAME=ais_data_v1 go run .
 ```
 
+## Experimental: Pull-Based Ingestion
+
+`ingestor-pull` (`src/ingestor/pull.go`, entry point `IngestPull`) is an alternate `ingestor` implementation being evaluated as a fix for push-ingestion backlog under load (see [[ingestor-throughput-capacity]] in project memory). Instead of one invocation per Pub/Sub message, it's HTTP-triggered by Cloud Scheduler on a fixed interval; each invocation (a **Tick**) drains a pull subscription until idle, writes everything to the same `data:<source>` Redis keys the push ingestor uses, then calls windower's `ProcessWindows` directly (fire-and-forget) instead of relying on windower's own schedule. See `CONTEXT.md` for the Push/Pull Ingestor, Tick, and Drain terminology.
+
+This is a parallel experiment, not a replacement: the push and pull ingestors are never deployed at the same time, and are compared sequentially (A/B), since both write into the same Redis keys and a topic fans out to every subscription independently.
+
+To run a pull-ingestor test:
+
+```bash
+bash scripts/create-pull-subscription.sh   # creates ais-stream-pull fresh
+gcloud functions delete ingestor --region europe-west3 --quiet   # push ingestor must not be live
+bash scripts/deploy-ingestor-pull.sh
+# point Cloud Scheduler's job at ingestor-pull's URL instead of windower's for the duration of the test
+```
+
+Afterwards, redeploy the push ingestor (`scripts/deploy-ingestor.sh`), point Scheduler back at windower, and run `scripts/delete-pull-subscription.sh` so `ais-stream-pull` doesn't linger and accumulate backlog between runs.
+
 ## Query Config
 
 The query/source definitions (`query-config.yaml`) used by the simulator and worker are stored in GCS at `gs://faastreams-config/query-config.yaml`.
