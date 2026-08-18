@@ -41,10 +41,11 @@ gcloud run services update coordinator-benchmark-sid \
   --region=europe-west3 \
   --max-instances=10
 
-cd ../simulator
-CONFIG_BUCKET=faastreams-config \
-CONFIG_OBJECT=query-config.yaml \
+cd ../src/simulator
 PUBSUB_PROJECT_ID=faastreams \
 PUBSUB_TOPIC_ID=ais-stream \
 SOURCE_NAME=ais_data_v1 \
+SIM_CSV_PATH="../$CSV_PATH" \
+SIM_TIMESTAMP_FIELD="# Timestamp" \
+SIM_TIMESTAMP_FORMAT="02/01/2006 15:04:05" \
 go run .

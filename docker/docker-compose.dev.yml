@@ -12,7 +12,10 @@ services:
       PUBSUB_EMULATOR_HOST: pubsub:8085
       PUBSUB_PROJECT_ID: local-project
       PUBSUB_TOPIC_ID: ais-stream
-      CSV_PATH: /app/data/ais.csv
+      SOURCE_NAME: ais_data_v1
+      SIM_CSV_PATH: /app/data/ais.csv
+      SIM_TIMESTAMP_FIELD: "# Timestamp"
+      SIM_TIMESTAMP_FORMAT: "02/01/2006 15:04:05"
     volumes:
       - ../data:/app/data:ro
 
