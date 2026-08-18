@@ -19,6 +19,12 @@ def handler(request):
         window_end = int(body["window_end"])
         query_name = str(body.get("query_name"))
         return_type = str(body["return_type"])
+        ingestor_start = body.get("ingestor_start", 0)
+        ingestor_end   = body.get("ingestor_end", 0)
+        windower_start = body.get("windower_start", 0)
+        windower_end   = body.get("windower_end", 0)
+        worker_start   = body.get("worker_start", 0)
+        worker_end     = body.get("worker_end", 0)
     except (KeyError, TypeError, ValueError) as e:
         print(f"[DataSink] Invalid payload: {e} | body={body}", flush=True)
         return {"error": f"Invalid payload: {e}"}, 400
@@ -35,6 +41,12 @@ def handler(request):
         "window_end": window_end,
         "query": query_name,
         "return_type": return_type,
+        "ingestor_start": ingestor_start,  # t0
+        "ingestor_end":   ingestor_end,    # t1
+        "windower_start": windower_start,  # t2
+        "windower_end":   windower_end,    # t3
+        "worker_start":   worker_start,    # t4
+        "worker_end":     worker_end,      # t5
     })
 
     try:

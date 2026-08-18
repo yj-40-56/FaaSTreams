@@ -89,6 +89,19 @@ func init() {
 }
 
 func processWindows(w http.ResponseWriter, r *http.Request) {
+	// Record t2 (Windower Start Time in milliseconds)
+	t2 := time.Now().UnixMilli()
+
+	var incoming struct {
+		IngestorStart int64 `json:"ingestor_start"`
+		IngestorEnd   int64 `json:"ingestor_end"`
+	}
+
+	if r.Body != nil {
+		defer r.Body.Close()
+		_ = json.NewDecoder(r.Body).Decode(&incoming)
+	}
+
 	now := time.Now().Add(-lateBufferSeconds * time.Second)
 	ctx := context.Background()
 
@@ -109,11 +122,11 @@ func processWindows(w http.ResponseWriter, r *http.Request) {
 			var err error
 			switch q.WindowType {
 			case "tumbling":
-				err = coord.handleTumbling(ctx, now, q)
+				err = coord.handleTumbling(ctx, now, q, incoming.IngestorStart, incoming.IngestorEnd, t2)
 			case "sliding":
-				err = coord.handleSliding(ctx, now, q)
+				err = coord.handleSliding(ctx, now, q, incoming.IngestorStart, incoming.IngestorEnd, t2)
 			/*case "session":
-			err = coord.handleSession(ctx, now, q)*/
+			err = coord.handleSession(ctx, now, q, incoming.IngestorStart, incoming.IngestorEnd, t2)*/
 			default:
 				err = fmt.Errorf("unsupported window type %q (%s)", q.WindowType, q.Name)
 			}
@@ -142,11 +155,15 @@ func processWindows(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (c *Coordinator) triggerWorker(windowStart, windowEnd time.Time, q config.Query, id string) error {
-
+func (c *Coordinator) triggerWorker(windowStart, windowEnd time.Time, q config.Query, id string, t0, t1, t2 int64) error {
+	t3 := time.Now().UnixMilli()
 	source, _ := c.config.Sources[q.DataSource]
 
 	data := map[string]interface{}{
+		"ingestor_start":   t0, // t0 from Ingestor
+		"ingestor_end":     t1, // t1 from Ingestor
+		"windower_start":   t2, // t2
+		"windower_end":     t3, // t3
 		"window_start":     windowStart.Unix(),
 		"window_end":       windowEnd.Unix(),
 		"query":            q.Query,
@@ -196,7 +213,7 @@ func (c *Coordinator) recordCleanup(ctx context.Context, prefix string) {
 }
 
 // tumbling: slideSecs == windowSec
-func (c *Coordinator) createWindows(ctx context.Context, t time.Time, q config.Query, slideSecs int64) error {
+func (c *Coordinator) createWindows(ctx context.Context, t time.Time, q config.Query, slideSecs int64, t0, t1, t2 int64) error {
 	prefix := q.DataSource
 	lockKeyWindow := lockKey + ":" + prefix + ":" + q.Name
 
@@ -250,7 +267,7 @@ func (c *Coordinator) createWindows(ctx context.Context, t time.Time, q config.Q
 				workerWg.Add(1)
 				go func(start, end int64) {
 					defer workerWg.Done()
-					if err := c.triggerWorker(time.Unix(start, 0).UTC(), time.Unix(end, 0).UTC(), q, ""); err != nil {
+					if err := c.triggerWorker(time.Unix(start, 0).UTC(), time.Unix(end, 0).UTC(), q, "", t0, t1, t2); err != nil {
 						log.Printf("[Coordinator] trigger worker %s failed: %v", q.Name, err)
 					}
 				}(winStart, endSec)
@@ -277,17 +294,17 @@ func (c *Coordinator) createWindows(ctx context.Context, t time.Time, q config.Q
 	return updateErr
 }
 
-func (c *Coordinator) handleTumbling(ctx context.Context, t time.Time, q config.Query) error {
-	return c.createWindows(ctx, t, q, int64(q.WindowSize))
+func (c *Coordinator) handleTumbling(ctx context.Context, t time.Time, q config.Query, t0, t1, t2 int64) error {
+	return c.createWindows(ctx, t, q, int64(q.WindowSize), t0, t1, t2)
 }
 
-func (c *Coordinator) handleSliding(ctx context.Context, t time.Time, q config.Query) error {
+func (c *Coordinator) handleSliding(ctx context.Context, t time.Time, q config.Query, t0, t1, t2 int64) error {
 	const slideSeconds = 60
 	slideSecs := int64(slideSeconds) // int64(q.SlideInSeconds)
-	return c.createWindows(ctx, t, q, slideSecs)
+	return c.createWindows(ctx, t, q, slideSecs, t0, t1, t2)
 }
 
-func (c *Coordinator) handleSession(ctx context.Context, t time.Time, q config.Query) error {
+func (c *Coordinator) handleSession(ctx context.Context, t time.Time, q config.Query, t0, t1, t2 int64) error {
 	prefix := q.DataSource
 	specificWindowNextKey := windowNextKey + ":" + prefix
 	specificSessionKey := sessionKey + ":" + prefix
@@ -341,7 +358,7 @@ func (c *Coordinator) handleSession(ctx context.Context, t time.Time, q config.Q
 					workerWg.Add(1)
 					go func(start, end int64, query config.Query, id string) {
 						defer workerWg.Done()
-						if err := c.triggerWorker(time.Unix(start, 0).UTC(), time.Unix(end, 0).UTC(), query, id); err != nil {
+						if err := c.triggerWorker(time.Unix(start, 0).UTC(), time.Unix(end, 0).UTC(), query, id, t0, t1, t2); err != nil {
 							log.Printf("[Session] failed to trigger worker for id %s: %v", id, err)
 						}
 					}(winStart, winEnd, q, currentID)
@@ -354,7 +371,7 @@ func (c *Coordinator) handleSession(ctx context.Context, t time.Time, q config.Q
 
 			diff := nowSec - winEnd
 			if diff > gapSec {
-				if err := c.triggerWorker(time.Unix(winStart, 0).UTC(), time.Unix(winEnd, 0).UTC(), q, currentID); err != nil {
+				if err := c.triggerWorker(time.Unix(winStart, 0).UTC(), time.Unix(winEnd, 0).UTC(), q, currentID, t0, t1, t2); err != nil {
 					log.Printf("[Session] failed to trigger window for id %s: %v", currentID, err)
 				}
 

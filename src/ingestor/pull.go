@@ -1,7 +1,9 @@
 package ingestor
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
@@ -225,7 +227,7 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 	defer cancelSession()
 
 	sessionStart := time.Now()
-
+	t0 := sessionStart.UnixMilli()
 	// `isShuttingDown` acts as a thread-safe coordination barrier (0 = active, 1 = stopping).
 	// It ensures the background ticker goroutine completely halts its triggers once the
 	// SubPub-Pulling terminates
@@ -268,7 +270,7 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 				// There could be cases where a window is 2xinterval (10s) long,
 				// in which case the last `interval` (5s) are not sufficient to determine whether the window should be triggered
 				log.Printf("[PullIngestor] processed %d messages", currentProcessed)
-				triggerWindower()
+				triggerWindower(t0, time.Now().UnixMilli())
 
 			case <-sessionCtx.Done():
 				return
@@ -353,14 +355,18 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 	finalProcessed := atomic.SwapInt64(&processedSinceLastTick, 0)
 
 	log.Printf("[PullIngestor] processed %d messages, session_elapsed=%s", finalProcessed, time.Since(sessionStart))
-	triggerWindower()
+	triggerWindower(t0, time.Now().UnixMilli())
 
 	w.WriteHeader(http.StatusOK)
 }
 
-func triggerWindower() {
+func triggerWindower(t0, t1 int64) {
+	payload, _ := json.Marshal(map[string]int64{
+		"ingestor_start": t0, // t0
+		"ingestor_end":   t1, // t1
+	})
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Post(windowerURL, "application/json", nil)
+	resp, err := client.Post(windowerURL, "application/json", bytes.NewBuffer(payload))
 	if err != nil {
 		log.Printf("[PullIngestor] windower trigger failed: %v", err)
 		return
