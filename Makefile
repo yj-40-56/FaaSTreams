@@ -10,19 +10,23 @@
 # see terraform/README.md and README.md.
 
 ENV ?= live
+# Subcommand for `make terraform-state`, e.g. ARGS="show module.worker.google_cloudfunctions2_function.this"
+ARGS ?= list
 # Data source both benchmark targets validate. Defaults to the T-Drive taxi replay
 # path (tdrive_data_v1) — override with SOURCE=ais_data_v1 to exercise the AIS
 # vessel pipeline instead (scripts/run-simulator.sh, unaffected by this variable,
 # remains directly runnable for that path).
 SOURCE ?= tdrive_data_v1
 
-.PHONY: help terraform-plan terraform-apply terraform-import-live \
+.PHONY: help terraform-plan terraform-apply terraform-import-live terraform-state terraform-show \
         scheduler-pause scheduler-resume benchmark benchmark-full
 
 help:
 	@echo "make terraform-plan          - preview infra changes (ENV=$(ENV)), safe anytime"
 	@echo "make terraform-apply         - apply infra changes (ENV=$(ENV)), interactive confirm"
 	@echo "make terraform-import-live   - one-time: import existing live GCP resources into state"
+	@echo "make terraform-state         - terraform state list (ARGS=\"show <addr>\" for other subcommands)"
+	@echo "make terraform-show          - terraform show (full current state, human-readable)"
 	@echo "make scheduler-pause         - pause both live Cloud Scheduler jobs"
 	@echo "make scheduler-resume        - resume coordinator-5sec-trigger (JOBS=... to override)"
 	@echo "make benchmark               - short (~2 min) taxi-burst end-to-end benchmark, pass/fail per stage"
@@ -45,6 +49,12 @@ endif
 
 terraform-import-live:
 	$(MAKE) -C terraform import-live
+
+terraform-state:
+	$(MAKE) -C terraform state ENV=$(ENV) ARGS="$(ARGS)"
+
+terraform-show:
+	$(MAKE) -C terraform show ENV=$(ENV)
 
 scheduler-pause:
 	$(MAKE) -C terraform scheduler-pause

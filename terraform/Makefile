@@ -72,6 +72,17 @@ apply:
 	$(TF) workspace select -or-create $(ENV)
 	$(TF) apply -var-file="environments/$(ENV).tfvars"
 
+# Read-only inspection. `make state` lists all resources; pass ARGS for other
+# subcommands, e.g. `make state ARGS="show module.worker.google_cloudfunctions2_function.this"`.
+ARGS ?= list
+state:
+	$(TF) workspace select -or-create $(ENV)
+	$(TF) state $(ARGS)
+
+show:
+	$(TF) workspace select -or-create $(ENV)
+	$(TF) show
+
 # No default here for ENV=live safety — see the repo-root Makefile, which
 # intentionally does NOT wrap this target. Run explicitly: make -C terraform destroy ENV=<env>
 destroy:
@@ -103,4 +114,4 @@ import-live:
 	@echo "net-new additions (functions_source bucket + objects), not changes to"
 	@echo "anything just imported."
 
-.PHONY: bucket-init purge-env save-results scheduler-pause scheduler-resume init validate plan plan-check apply destroy import-live
+.PHONY: bucket-init purge-env save-results scheduler-pause scheduler-resume init validate plan plan-check apply destroy import-live state show
