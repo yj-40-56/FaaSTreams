@@ -17,9 +17,12 @@ ARGS ?= list
 # vessel pipeline instead (scripts/run-simulator.sh, unaffected by this variable,
 # remains directly runnable for that path).
 SOURCE ?= tdrive_data_v1
+# Traffic duration for `make benchmark-smoke` — just enough real events (~100 in 15s
+# of the trainday workload) to exercise every stage at least once.
+SMOKE_DURATION_S ?= 15
 
 .PHONY: help terraform-plan terraform-apply terraform-import-live terraform-state terraform-show \
-        scheduler-pause scheduler-resume benchmark benchmark-full
+        scheduler-pause scheduler-resume benchmark-smoke benchmark benchmark-full
 
 help:
 	@echo "make terraform-plan          - preview infra changes (ENV=$(ENV)), safe anytime"
@@ -29,6 +32,7 @@ help:
 	@echo "make terraform-show          - terraform show (full current state, human-readable)"
 	@echo "make scheduler-pause         - pause both live Cloud Scheduler jobs"
 	@echo "make scheduler-resume        - resume coordinator-5sec-trigger (JOBS=... to override)"
+	@echo "make benchmark-smoke         - ~15s smoke test: does the terraform-managed pipeline + make plumbing work at all"
 	@echo "make benchmark               - short (~2 min) taxi-burst end-to-end benchmark, pass/fail per stage"
 	@echo "make benchmark-full          - full 96-minute train-day taxi replay benchmark"
 	@echo "                                (SOURCE=ais_data_v1 to run either against the AIS pipeline instead)"
@@ -61,6 +65,22 @@ scheduler-pause:
 
 scheduler-resume:
 	$(MAKE) -C terraform scheduler-resume
+
+# Very quick smoke test (~15s of real taxi traffic + minimal drain): confirms the
+# terraform-managed infra and the make-driven benchmark plumbing work end-to-end at
+# all, without the time/cost of the full `make benchmark` run. Same stage-by-stage
+# PASS/FAIL report, just a much smaller burst — not a substitute for `make benchmark`
+# before something that actually needs the fuller signal.
+benchmark-smoke:
+	@if [ "$${SKIP_INFRA_CHECK:-}" != "1" ]; then \
+		make -C terraform plan-check ENV=$(ENV) || \
+		{ echo ""; echo "terraform plan shows drift from applied state — review with 'make terraform-plan' before benchmarking, or set SKIP_INFRA_CHECK=1 to bypass."; exit 1; }; \
+	fi
+	$(MAKE) scheduler-pause
+	@trap 'make -C terraform scheduler-resume' EXIT; \
+	  bash scripts/reset-pipeline.sh --no-wait --source $(SOURCE) && \
+	  if [ "$(SOURCE)" = "tdrive_data_v1" ]; then DURATION_S=$(SMOKE_DURATION_S) bash scripts/run-taxi-burst.sh; else bash scripts/run-simulator.sh; fi && \
+	  bash scripts/benchmark-check.sh --source $(SOURCE)
 
 # Short, cheap benchmark: ~2 minutes of real traffic (taxi records sliced from the
 # trainday workload by default — SOURCE=ais_data_v1 for the AIS vessel simulator
