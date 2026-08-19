@@ -1,113 +1,147 @@
 # FaaSTreams Terraform
 
+Manages the live pipeline: `ingestor-pull` -> `windower` -> `worker` -> `data-sink`,
+the `ais-stream` / `ais-stream-pull` Pub/Sub topic + subscription,
+`scheduler-task-queue`, its Cloud Tasks queue, and the two Cloud Scheduler jobs.
+
+Redis and the VPC/subnet are pre-existing shared infrastructure, referenced by
+variable (IP/name) only — Terraform never creates, modifies, or destroys them.
+
+**Push and pull ingestors must never run simultaneously** — they write the same
+Redis keys. This repo's live pipeline uses the pull ingestor (`ingestor-pull`); the
+old push ingestor (`src/ingestor`, entry point `IngestEvent`) is not managed by
+Terraform and should not be deployed while `ingestor-pull` is live.
+
 ## Prerequisites
 
-- Docker (for running Terraform)
+- Docker (for running Terraform — `terraform/Makefile` wraps `hashicorp/terraform:1.9`)
 - `gcloud` CLI authenticated (`gcloud auth application-default login`)
-- GCS state bucket exists (`make bucket-init` if not)
+- Network access to `registry.terraform.io` to fetch the `google`/`archive`
+  providers on `init`. **Some networks geo-block this host** (confirmed via
+  `curl -I https://registry.terraform.io/.well-known/terraform.json` returning
+  `x-amzn-waf-reason: geo` and a 404) — if `terraform init` fails with "Invalid
+  provider registry host", check for that header; a VPN out of the blocked region
+  resolves it.
+- GCS state bucket exists (`make -C terraform bucket-init` if not)
 
-## First-time setup
+## First-time setup: importing the live pipeline
+
+Terraform's state currently tracks nothing real (verified: `baseline`/`benchmark-*`
+workspaces are empty, `default` workspace only has harmless `archive_file` hashes).
+The live resources listed above already exist in GCP, deployed by hand — **do not
+`apply` before importing them**, or Terraform will try to create duplicates and
+fail on "already exists" (or worse, succeed and orphan the real ones).
 
 ```bash
+cd terraform
 make init
-make build-worker ENV=baseline   # build and push the worker Docker image
-make apply ENV=baseline
+make import-live      # imports every live resource into the `live` workspace, one at a time
+make plan ENV=live    # MUST show only new-resource additions (functions_source
+                       # bucket + its objects, IAM bindings) — never an unexplained
+                       # update/destroy on anything just imported. If you see one,
+                       # stop and fix the .tf default that doesn't match live before
+                       # proceeding.
 ```
 
-## Running a benchmark
-
-Every run requires a Redis flush first. Stale `window_end` keys from a previous session cause the coordinator to replay thousands of empty historical windows before reaching current data.
+Only after a clean `plan` review:
 
 ```bash
-# 1. Flush Redis state
-make flush-redis ENV=baseline
-
-# 2. Run the simulator (~96 seconds, window fires at ~60s)
-cd ../src/simulator
-PUBSUB_PROJECT_ID=faastreams PUBSUB_TOPIC_ID=ais-stream-baseline CSV_PATH=../../data/ais.csv go run .
-
-# 3. Save results (run from terraform/ immediately after the simulator finishes)
-make save-results ENV=baseline
+make apply ENV=live   # interactive confirm (no -auto-approve is ever passed)
 ```
 
-Results are saved to `results/{env}_{window_size}s_{timestamp}.json`.
+### Known first-plan diff: VPC egress
 
-To view raw logs instead:
+Live functions currently use **direct VPC egress** (`--network default --subnet
+.../default`), not the pre-existing `redis-eu-west3-connector` Serverless VPC
+Access connector. Confirmed via `terraform providers schema -json` against provider
+`hashicorp/google` v5.45.2: `google_cloudfunctions2_function.service_config` has no
+direct-VPC-egress fields at all (no `network`/`subnetwork`/`network_interfaces`) —
+`vpc_connector`/`vpc_connector_egress_settings` is the only VPC attachment mechanism
+this resource type supports, so that's what this config uses for every managed
+function. **`terraform plan` will show a network-config change on the four
+functions + scheduler-task-queue on first plan** — this is expected and, given the
+provider's limitations, unavoidable without switching resource types. Review it
+before applying so you understand it's attaching the connector, not a sign of
+something wrong with the config.
+
+## Day-to-day
+
+```bash
+make -C terraform plan ENV=live      # preview changes, safe anytime
+make -C terraform apply ENV=live     # apply after reviewing the plan
+make -C terraform validate ENV=live
+```
+
+From the repo root, `make terraform-plan` / `make terraform-apply` wrap these (see
+the root `README.md` / `Makefile`).
+
+## Scheduler pause/resume
+
+`google_cloud_scheduler_job` has no pause/enabled field in the provider — pausing a
+job is an imperative `gcloud scheduler jobs pause|resume` action, not something
+`terraform apply` can express or track.
+
+```bash
+make -C terraform scheduler-pause    # pauses both live jobs
+make -C terraform scheduler-resume   # resumes only coordinator-5sec-trigger by default;
+                                      # JOBS="coordinator-5sec-trigger windower-tick" to resume both
+```
+
+`windower-tick` (which targets `ingestor-pull`) is paused live today; `scheduler-resume`
+deliberately does not re-enable it, since that's an operational decision, not a side
+effect of running a benchmark. `make benchmark` (repo root) uses `scheduler-pause`/
+`-resume` around each run automatically, and triggers `ingestor-pull` directly via
+HTTP instead of relying on `windower-tick`.
+
+## Saving benchmark results
+
+```bash
+make -C terraform save-results ENV=live
+```
+
+Reads recent `windower`/`worker` Cloud Logging output and writes
+`results/{env}_{timestamp}.json`. For ad hoc log inspection:
+
 ```bash
 gcloud logging read \
-  'resource.type="cloud_run_revision" AND (resource.labels.service_name="coordinator-baseline" OR resource.labels.service_name="worker-baseline") AND textPayload!=""' \
+  'resource.type="cloud_run_revision" AND (resource.labels.service_name="windower" OR resource.labels.service_name="worker") AND textPayload!=""' \
   --project=faastreams --limit=50 --format="value(timestamp,textPayload)" \
   --freshness=5m
 ```
 
-## Teardown
+## Query config
 
-```bash
-make destroy ENV=baseline
-```
+`query_config_bucket`/`query_config_object` (defaults: `faastreams-config` /
+`query-config.yaml`) are referenced by variable only — Terraform does not manage
+the object's content. The bucket has several hand-edited snapshot files today
+(`query-config-sidar.yaml`, `query-config.pre-tdrive-20260721.yaml`, ...), so a
+Terraform-owned object would risk silently overwriting live query config with
+whatever's checked into the repo (nothing, currently) on first apply. Use
+`scripts/update-config.sh` (repo root) to edit it by hand — it redeploys
+`ingestor-pull` and `windower` afterward.
 
-## Benchmark configurations
+A future path to GitOps-manage this file: snapshot the live object into
+`terraform/files/query-config.yaml`, add a `google_storage_bucket_object` resource,
+import the existing object, and verify `terraform plan` shows zero diff before ever
+applying.
 
-Three pre-configured environments are available:
+## Isolated sandbox environments
 
-| ENV | Window | Worker RAM | What it tests |
-|-----|--------|------------|---------------|
-| `baseline` | 60s | 2 GB | control |
-| `benchmark-small-window` | 30s | 2 GB | coordinator overhead at higher window frequency |
-| `benchmark-high-memory` | 60s | 4 GB | whether more RAM reduces query latency |
-
-Commands for each:
-
-```bash
-# baseline (topic: ais-stream-baseline)
-make apply ENV=baseline
-make flush-redis ENV=baseline
-PUBSUB_TOPIC_ID=ais-stream-baseline go run .    # from src/simulator
-make save-results ENV=baseline
-make destroy ENV=baseline
-
-# benchmark-small-window (topic: ais-stream-bench-30s)
-make apply ENV=benchmark-small-window
-make flush-redis ENV=benchmark-small-window
-PUBSUB_TOPIC_ID=ais-stream-bench-30s go run .
-make save-results ENV=benchmark-small-window
-make destroy ENV=benchmark-small-window
-
-# benchmark-high-memory (topic: ais-stream-bench-highmem)
-make apply ENV=benchmark-high-memory
-make flush-redis ENV=benchmark-high-memory
-PUBSUB_TOPIC_ID=ais-stream-bench-highmem go run .
-make save-results ENV=benchmark-high-memory
-make destroy ENV=benchmark-high-memory
-```
-
-You can also override the window size on any environment without editing the tfvars file:
-
-```bash
-make apply ENV=baseline WINDOW_SIZE=15
-make flush-redis ENV=baseline
-PUBSUB_TOPIC_ID=ais-stream-baseline go run .
-make save-results ENV=baseline WINDOW_SIZE=15
-make destroy ENV=baseline
-```
-
-`-var` takes precedence over `-var-file`, so `WINDOW_SIZE` overrides whatever is in the environment's tfvars.
-
-## simulator scaleFactor
-
-The simulator compresses CSV timestamps by `scaleFactor` so data plays back faster than recorded. The value must satisfy:
-
-```
-CSV_duration_seconds / scaleFactor > window_size_seconds
-```
-
-Adjust `scaleFactor` in `src/simulator/simulator.go` to match your CSV file before running.
+The old `baseline`/`benchmark-*` tfvars (window-size and coordinator-memory
+sweeps) were removed — they targeted variables (`window_size`, `coordinator_*`)
+that no longer exist under this module set, and cloning the full 5-function live
+pipeline per sandbox is meaningfully more expensive than the old 3-resource
+coordinator setup. To stand up an isolated copy for an experiment, copy
+`environments/live.tfvars` to `environments/<name>.tfvars`, set
+`env_name = "<name>"`, and `make -C terraform apply ENV=<name>` — this creates a
+fully separate, `-<name>`-suffixed set of resources that never touches live.
+`make -C terraform purge-env ENV=<name>` cleans one up (refuses to run against
+`ENV=live`).
 
 ## Other targets
 
 | Command | Description |
 |---------|-------------|
-| `make plan ENV=baseline` | Preview changes without applying |
-| `make validate ENV=baseline` | Validate Terraform config |
-| `make purge-env ENV=baseline` | Delete orphaned GCP resources not in Terraform state |
-| `make build-worker ENV=baseline` | Rebuild and push the worker Docker image |
+| `make -C terraform plan-check ENV=live` | `terraform plan -detailed-exitcode`, used by `make benchmark`'s drift guard |
+| `make -C terraform purge-env ENV=<name>` | Delete orphaned GCP resources for a non-live sandbox env not in Terraform state |
+| `make -C terraform destroy ENV=<name>` | Destroy an environment's resources. No root-level wrapper exists for this — deliberately, since `ENV` defaults to `live`. |

@@ -1,23 +1,23 @@
 data "archive_file" "source" {
   type        = "zip"
-  source_dir  = "${path.root}/../src/data-sink"
-  output_path = "${path.module}/data-sink${var.name_suffix}.zip"
+  source_dir  = "${path.root}/../src/windower"
+  output_path = "${path.module}/windower${var.name_suffix}.zip"
 }
 
 resource "google_storage_bucket_object" "source" {
-  name   = "data-sink${var.name_suffix}-${data.archive_file.source.output_md5}.zip"
+  name   = "windower${var.name_suffix}-${data.archive_file.source.output_md5}.zip"
   bucket = var.source_bucket
   source = data.archive_file.source.output_path
 }
 
 resource "google_cloudfunctions2_function" "this" {
-  name     = "data-sink${var.name_suffix}"
+  name     = "windower${var.name_suffix}"
   location = var.region
   project  = var.project_id
 
   build_config {
-    runtime     = "python312"
-    entry_point = "handler"
+    runtime     = "go126"
+    entry_point = "ProcessWindows"
     source {
       storage_source {
         bucket = var.source_bucket
@@ -31,18 +31,19 @@ resource "google_cloudfunctions2_function" "this" {
     available_cpu                    = var.cpu
     max_instance_count               = var.max_instances
     max_instance_request_concurrency = var.concurrency
-    timeout_seconds                  = 60
+    timeout_seconds                  = var.timeout
     ingress_settings                 = "ALLOW_ALL"
     all_traffic_on_latest_revision   = true
 
-    # See modules/ingestor_pull/main.tf for the direct-VPC-egress-vs-connector caveat.
+    # See modules/ingestor_pull/main.tf for the direct-VPC-egress-vs-connector note.
     vpc_connector                 = var.vpc_connector
     vpc_connector_egress_settings = "PRIVATE_RANGES_ONLY"
 
     environment_variables = {
-      REDIS_HOST = var.redis_host
-      REDIS_PORT = var.redis_port
-      REDIS_KEY  = var.redis_key
+      REDIS_URL     = "${var.redis_host}:${var.redis_port}"
+      WORKER_URL    = var.worker_url
+      CONFIG_BUCKET = var.query_config_bucket
+      CONFIG_OBJECT = var.query_config_object
     }
   }
 }

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Reads the most recent benchmark window results from Cloud Logging and saves
-them to results/{env}_{window_size}s_{timestamp}.json.
+Reads the most recent benchmark window results from Cloud Logging (windower +
+worker) and saves them to results/{env}_{timestamp}.json.
 
 Usage:
-  python3 scripts/save_results.py --env=baseline --project=faastreams
-  python3 scripts/save_results.py --env=baseline --window-size=15 --freshness=10m
+  python3 scripts/save_results.py --env=live --project=faastreams
+  python3 scripts/save_results.py --env=live --freshness=10m
 """
 import argparse
 import ast
@@ -21,39 +21,25 @@ WINDOW_RE = re.compile(r'Received window (\S+) - (\S+) \(\d+-\d+\)')
 FETCH_RE = re.compile(r'\[Fetch\] Found (\d+) member\(s\)')
 
 
-def read_tfvars(env):
-    path = f"environments/{env}.tfvars"
-    values = {}
-    if not os.path.exists(path):
-        return values
-    for line in open(path):
-        for key in ("env_name", "window_size"):
-            m = re.match(rf'{key}\s*=\s*"?([^"\s]+)"?', line)
-            if m:
-                values[key] = m.group(1)
-    return values
-
-
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env", default="baseline")
-    parser.add_argument("--window-size", type=int, help="Override window size label in filename")
+    parser.add_argument("--env", default="live", help="'live' = unsuffixed service names; anything else reads '<service>-<env>'")
     parser.add_argument("--project", default="faastreams")
     parser.add_argument("--freshness", default="15m")
     args = parser.parse_args()
 
-    tfvars = read_tfvars(args.env)
-    env_name = tfvars.get("env_name", args.env)
-    window_size = args.window_size or int(tfvars.get("window_size", 0)) or None
+    suffix = "" if args.env == "live" else f"-{args.env}"
+    windower_name = f"windower{suffix}"
+    worker_name = f"worker{suffix}"
 
     log_filter = (
         f'resource.type="cloud_run_revision" AND '
-        f'(resource.labels.service_name="coordinator-{env_name}" OR '
-        f'resource.labels.service_name="worker-{env_name}") AND '
+        f'(resource.labels.service_name="{windower_name}" OR '
+        f'resource.labels.service_name="{worker_name}") AND '
         f'textPayload!=""'
     )
 
-    print(f"Reading logs for {args.env} (service prefix: {env_name})...")
+    print(f"Reading logs for env={args.env} ({windower_name}, {worker_name})...")
     result = subprocess.run(
         ["gcloud", "logging", "read", log_filter,
          "--project", args.project, "--limit", "500",
@@ -100,8 +86,6 @@ def main():
 
     output = {
         "env": args.env,
-        "env_name": env_name,
-        "window_size_seconds": window_size,
         "window": f"{window_start} - {window_end}" if window_start else "unknown",
         "event_count": event_count,
         "logged_at": log_timestamp,
@@ -111,13 +95,12 @@ def main():
 
     os.makedirs("results", exist_ok=True)
     ts_label = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
-    w_label = f"{window_size}s" if window_size else "unknown"
-    filename = f"results/{args.env}_{w_label}_{ts_label}.json"
+    filename = f"results/{args.env}_{ts_label}.json"
 
     with open(filename, "w") as f:
         json.dump(output, f, indent=2, default=str)
 
-    print(f"Saved → {filename}")
+    print(f"Saved -> {filename}")
     print(f"  Window : {output['window']}")
     print(f"  Events : {event_count}")
     for name, rows in queries.items():

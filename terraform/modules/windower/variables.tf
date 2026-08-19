@@ -1,4 +1,4 @@
-variable "env_name" {
+variable "name_suffix" {
   type = string
 }
 
@@ -15,8 +15,7 @@ variable "memory" {
 }
 
 variable "cpu" {
-  description = "CPU count as a string (e.g. '1', '2')."
-  type        = string
+  type = string
 }
 
 variable "concurrency" {
@@ -24,6 +23,10 @@ variable "concurrency" {
 }
 
 variable "max_instances" {
+  type = number
+}
+
+variable "timeout" {
   type = number
 }
 
@@ -35,28 +38,16 @@ variable "redis_port" {
   type = string
 }
 
-variable "redis_key" {
+variable "query_config_bucket" {
   type = string
 }
 
-variable "coordinator_key_prefix" {
+variable "query_config_object" {
   type = string
 }
 
 variable "worker_url" {
   type = string
-}
-
-variable "topic_id" {
-  type = string
-}
-
-variable "subscription_id" {
-  type = string
-}
-
-variable "window_size" {
-  type = number
 }
 
 variable "vpc_connector" {

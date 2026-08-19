@@ -1,13 +1,16 @@
 locals {
-  topic_id               = "ais-stream-${var.env_name}"
-  subscription_id        = "ais-stream-${var.env_name}-sub"
-  redis_key              = "mod-stream-${var.env_name}"
-  coordinator_key_prefix = "coordinator-${var.env_name}"
-  vpc_connector_id       = "projects/${var.project_id}/locations/${var.region}/connectors/${var.vpc_connector_name}"
+  # "live" (the default) manages the real, unsuffixed production resources.
+  # Any other env_name namespaces everything with a "-<env_name>" suffix instead.
+  name_suffix = var.env_name == "live" ? "" : "-${var.env_name}"
+
+  topic_id        = "ais-stream"
+  subscription_id = "ais-stream-pull${local.name_suffix}"
+
+  vpc_connector_id = "projects/${var.project_id}/locations/${var.region}/connectors/${var.vpc_connector_name}"
 }
 
 resource "google_storage_bucket" "functions_source" {
-  name          = "${var.project_id}-functions-source-${var.env_name}"
+  name          = "${var.project_id}-tf-functions-source${local.name_suffix}"
   location      = var.region
   force_destroy = true
 
@@ -22,56 +25,100 @@ module "pubsub" {
   project_id      = var.project_id
   topic_id        = local.topic_id
   subscription_id = local.subscription_id
-  push_endpoint   = module.coordinator.url
 }
 
 module "data_sink" {
   source        = "./modules/data_sink"
-  env_name      = var.env_name
+  name_suffix   = local.name_suffix
   region        = var.region
   project_id    = var.project_id
   memory        = var.data_sink_memory
+  cpu           = var.data_sink_cpu
+  concurrency   = var.data_sink_concurrency
   max_instances = var.data_sink_max_instances
   redis_host    = var.redis_host
   redis_port    = var.redis_port
-  redis_key     = "${local.redis_key}-results"
+  redis_key     = "analytics-results"
   vpc_connector = local.vpc_connector_id
   source_bucket = google_storage_bucket.functions_source.name
 }
 
 module "worker" {
   source        = "./modules/worker"
-  env_name      = var.env_name
+  name_suffix   = local.name_suffix
   region        = var.region
   project_id    = var.project_id
-  image_uri     = "${var.region}-docker.pkg.dev/${var.project_id}/worker-images/worker-${var.env_name}"
   memory        = var.worker_memory
+  cpu           = var.worker_cpu
+  concurrency   = var.worker_concurrency
   max_instances = var.worker_max_instances
   timeout       = var.worker_timeout
   redis_host    = var.redis_host
   redis_port    = var.redis_port
-  redis_key     = local.redis_key
   data_sink_url = module.data_sink.url
   vpc_connector = local.vpc_connector_id
+  source_bucket = google_storage_bucket.functions_source.name
 }
 
-module "coordinator" {
-  source                 = "./modules/coordinator"
-  env_name               = var.env_name
-  region                 = var.region
-  project_id             = var.project_id
-  memory                 = var.coordinator_memory
-  cpu                    = var.coordinator_cpu
-  concurrency            = var.coordinator_concurrency
-  max_instances          = var.coordinator_max_instances
-  redis_host             = var.redis_host
-  redis_port             = var.redis_port
-  redis_key              = local.redis_key
-  coordinator_key_prefix = local.coordinator_key_prefix
-  worker_url             = module.worker.url
-  topic_id               = local.topic_id
-  subscription_id        = local.subscription_id
-  window_size            = var.window_size
-  vpc_connector          = local.vpc_connector_id
-  source_bucket          = google_storage_bucket.functions_source.name
+module "windower" {
+  source              = "./modules/windower"
+  name_suffix         = local.name_suffix
+  region              = var.region
+  project_id          = var.project_id
+  memory              = var.windower_memory
+  cpu                 = var.windower_cpu
+  concurrency         = var.windower_concurrency
+  max_instances       = var.windower_max_instances
+  timeout             = var.windower_timeout
+  redis_host          = var.redis_host
+  redis_port          = var.redis_port
+  query_config_bucket = var.query_config_bucket
+  query_config_object = var.query_config_object
+  worker_url          = module.worker.url
+  vpc_connector       = local.vpc_connector_id
+  source_bucket       = google_storage_bucket.functions_source.name
+}
+
+module "ingestor_pull" {
+  source              = "./modules/ingestor_pull"
+  name_suffix         = local.name_suffix
+  region              = var.region
+  project_id          = var.project_id
+  memory              = var.ingestor_pull_memory
+  cpu                 = var.ingestor_pull_cpu
+  concurrency         = var.ingestor_pull_concurrency
+  max_instances       = var.ingestor_pull_max_instances
+  timeout             = var.ingestor_pull_timeout
+  redis_host          = var.redis_host
+  redis_port          = var.redis_port
+  query_config_bucket = var.query_config_bucket
+  query_config_object = var.query_config_object
+  subscription_id     = module.pubsub.subscription_id
+  windower_url        = module.windower.url
+  vpc_connector       = local.vpc_connector_id
+  source_bucket       = google_storage_bucket.functions_source.name
+}
+
+module "scheduler_task_queue" {
+  source           = "./modules/scheduler_task_queue"
+  name_suffix      = local.name_suffix
+  region           = var.region
+  project_id       = var.project_id
+  memory           = var.scheduler_task_queue_memory
+  cpu              = var.scheduler_task_queue_cpu
+  concurrency      = var.scheduler_task_queue_concurrency
+  max_instances    = var.scheduler_task_queue_max_instances
+  tasks_queue_name = google_cloud_tasks_queue.faastreams_queue.name
+  windower_url     = module.windower.url
+  vpc_connector    = local.vpc_connector_id
+  source_bucket    = google_storage_bucket.functions_source.name
+}
+
+module "scheduler" {
+  source                   = "./modules/scheduler"
+  name_suffix              = local.name_suffix
+  project_id               = var.project_id
+  region                   = var.region
+  scheduler_task_queue_url = module.scheduler_task_queue.url
+  ingestor_pull_url        = module.ingestor_pull.url
 }

@@ -26,19 +26,11 @@ variable "max_instances" {
   type = number
 }
 
-variable "timeout" {
-  type = number
-}
-
-variable "redis_host" {
+variable "tasks_queue_name" {
   type = string
 }
 
-variable "redis_port" {
-  type = string
-}
-
-variable "data_sink_url" {
+variable "windower_url" {
   type = string
 }
 

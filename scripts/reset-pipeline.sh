@@ -1,6 +1,18 @@
 #!/bin/bash
 set -e
 
+# --no-wait: purge Pub/Sub backlog + delete Redis keys only, then return immediately
+# — skip waiting for data and seeding window:next. Used by `make benchmark`, which
+# triggers ingestor-pull directly right after this runs; windower auto-bootstraps
+# window:next to "now" the first time it sees a query with no existing pointer (see
+# src/windower/main.go's createWindows), so manual seeding isn't required for a short
+# run — it only avoids windower's first window starting slightly after data that
+# arrived during the wait, which doesn't matter for a benchmark's pass/fail check.
+NO_WAIT=false
+if [ "${1:-}" = "--no-wait" ]; then
+  NO_WAIT=true
+fi
+
 # Purge whatever's still queued in Pub/Sub from previous test runs. Resetting
 # Redis alone doesn't touch this — Eventarc's push subscription retries failed
 # deliveries with backoff instead of dropping them, so old test runs can leave
@@ -28,7 +40,14 @@ gcloud compute ssh redis-bastion --zone europe-west3-a --command "
     lock:ais_data_v1:hazard_zones_proximity_alerts
 "
 
-echo "Keys deleted. Run the simulation now — waiting for the first data to land in"
+echo "Keys deleted."
+
+if [ "$NO_WAIT" = true ]; then
+  echo "--no-wait set, skipping wait-for-data-and-seed step."
+  exit 0
+fi
+
+echo "Run the simulation now — waiting for the first data to land in"
 echo "data:ais_data_v1 before seeding the window pointer (push ingestor: seconds;"
 echo "pull ingestor: up to one Scheduler tick)..."
 

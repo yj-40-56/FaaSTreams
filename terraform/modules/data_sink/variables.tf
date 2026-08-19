@@ -1,4 +1,4 @@
-variable "env_name" {
+variable "name_suffix" {
   type = string
 }
 
@@ -12,6 +12,14 @@ variable "project_id" {
 
 variable "memory" {
   type = string
+}
+
+variable "cpu" {
+  type = string
+}
+
+variable "concurrency" {
+  type = number
 }
 
 variable "max_instances" {

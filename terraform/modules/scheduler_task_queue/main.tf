@@ -1,23 +1,23 @@
 data "archive_file" "source" {
   type        = "zip"
-  source_dir  = "${path.root}/../src/data-sink"
-  output_path = "${path.module}/data-sink${var.name_suffix}.zip"
+  source_dir  = "${path.root}/../src/scheduler_task_queue"
+  output_path = "${path.module}/scheduler-task-queue${var.name_suffix}.zip"
 }
 
 resource "google_storage_bucket_object" "source" {
-  name   = "data-sink${var.name_suffix}-${data.archive_file.source.output_md5}.zip"
+  name   = "scheduler-task-queue${var.name_suffix}-${data.archive_file.source.output_md5}.zip"
   bucket = var.source_bucket
   source = data.archive_file.source.output_path
 }
 
 resource "google_cloudfunctions2_function" "this" {
-  name     = "data-sink${var.name_suffix}"
+  name     = "scheduler-task-queue${var.name_suffix}"
   location = var.region
   project  = var.project_id
 
   build_config {
     runtime     = "python312"
-    entry_point = "handler"
+    entry_point = "windower_sub_1_trigger"
     source {
       storage_source {
         bucket = var.source_bucket
@@ -40,9 +40,10 @@ resource "google_cloudfunctions2_function" "this" {
     vpc_connector_egress_settings = "PRIVATE_RANGES_ONLY"
 
     environment_variables = {
-      REDIS_HOST = var.redis_host
-      REDIS_PORT = var.redis_port
-      REDIS_KEY  = var.redis_key
+      GCP_PROJECT  = var.project_id
+      GCP_REGION   = var.region
+      TASKS_QUEUE  = var.tasks_queue_name
+      WINDOWER_URL = var.windower_url
     }
   }
 }

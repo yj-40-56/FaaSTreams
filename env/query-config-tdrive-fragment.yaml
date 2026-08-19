@@ -1,0 +1,32 @@
+# Merge these entries into query-config.yaml. This is deliberately a fragment:
+# uploading it alone would remove the existing AIS configuration.
+sources:
+  tdrive_data_v1:
+    version: "1"
+    description: "T-Drive moving-taxi GPS pings replayed with wall-clock timestamps."
+    csv_path: "data/tdrive_workload_trainday.csv"
+    csv_delimiter: ","
+    scale_factor: 1.0
+    id_field: "taxi_id"
+    timestamp_field: "ts"
+    # Go's RFC3339 layout also accepts the optional fractional seconds emitted
+    # by time.RFC3339Nano.
+    timestamp_format: "2006-01-02T15:04:05Z07:00"
+    lat_field: "lat"
+    lon_field: "lon"
+    columns:
+      TaxiID:    { from_field: "taxi_id", type: VARCHAR,   required: true }
+      Timestamp: { from_field: "ts",      type: TIMESTAMP, required: true }
+      Longitude: { from_field: "lon",     type: DOUBLE,    required: true }
+      Latitude:  { from_field: "lat",     type: DOUBLE,    required: true }
+    reference_tables: {}
+
+queries:
+  - name: taxi_hotspots
+    data_source: tdrive_data_v1
+    window_type: tumbling
+    window_size: 60
+    query: "SELECT ROUND(Longitude, 2) AS cell_lon, ROUND(Latitude, 2) AS cell_lat, COUNT(*) AS ping_count, COUNT(DISTINCT TaxiID) AS taxi_count FROM events GROUP BY cell_lon, cell_lat ORDER BY ping_count DESC LIMIT 20"
+    return_type: spatial
+    is_alert: false
+    alert_format: ""

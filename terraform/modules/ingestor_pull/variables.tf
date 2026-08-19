@@ -38,7 +38,19 @@ variable "redis_port" {
   type = string
 }
 
-variable "data_sink_url" {
+variable "query_config_bucket" {
+  type = string
+}
+
+variable "query_config_object" {
+  type = string
+}
+
+variable "subscription_id" {
+  type = string
+}
+
+variable "windower_url" {
   type = string
 }
 
