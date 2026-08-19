@@ -3,9 +3,11 @@
 # reports PASS/FAIL/SKIP for each pipeline stage: ingestor-pull -> Redis,
 # windower dispatch, worker processed, data-sink stored.
 #
-# Assumes scripts/reset-pipeline.sh --no-wait ran immediately before the simulator,
-# so data:ais_data_v1 / analytics-results start at 0 — "stage succeeded" is just
-# "count > 0 now", no separate before/after snapshot needed for those two.
+# --source <name>: which data source to check (default ais_data_v1; use tdrive_data_v1
+# for the T-Drive taxi benchmark path). Assumes scripts/reset-pipeline.sh --no-wait
+# --source <name> ran immediately before the traffic generator, so data:<source> /
+# analytics-results start at 0 — "stage succeeded" is just "count > 0 now", no
+# separate before/after snapshot needed for those two.
 #
 # Never touches the live windower-tick scheduler job's paused state (see
 # terraform/README.md) — ingestor-pull is triggered by a direct HTTP call instead.
@@ -18,9 +20,14 @@ REDIS_HOST=${REDIS_HOST:-10.101.64.19}
 REDIS_PORT=${REDIS_PORT:-6379}
 
 FULL=false
-if [ "${1:-}" = "--full" ]; then
-  FULL=true
-fi
+SOURCE="ais_data_v1"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --full) FULL=true; shift ;;
+    --source) SOURCE="$2"; shift 2 ;;
+    *) echo "Unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
 
 if [ "$FULL" = true ]; then
   FRESHNESS="110m"
@@ -53,12 +60,12 @@ for i in $(seq 1 "$PULL_TRIGGERS"); do
 done
 
 # --- Stage 1: ingested (ingestor-pull -> Redis) ---
-INGESTED=$(redis_cmd "ZCARD data:ais_data_v1" | tail -1)
+INGESTED=$(redis_cmd "ZCARD data:${SOURCE}" | tail -1)
 if [ "${INGESTED:-0}" -gt 0 ] 2>/dev/null; then
-  RESULTS+=("PASS|1/4 ingestor-pull -> Redis|ZCARD data:ais_data_v1 = $INGESTED")
+  RESULTS+=("PASS|1/4 ingestor-pull -> Redis|ZCARD data:${SOURCE} = $INGESTED")
   PASS=$((PASS + 1))
 else
-  RESULTS+=("FAIL|1/4 ingestor-pull -> Redis|ZCARD data:ais_data_v1 = ${INGESTED:-0}")
+  RESULTS+=("FAIL|1/4 ingestor-pull -> Redis|ZCARD data:${SOURCE} = ${INGESTED:-0}")
   FAIL=$((FAIL + 1))
 fi
 

@@ -10,6 +10,11 @@
 # see terraform/README.md and README.md.
 
 ENV ?= live
+# Data source both benchmark targets validate. Defaults to the T-Drive taxi replay
+# path (tdrive_data_v1) — override with SOURCE=ais_data_v1 to exercise the AIS
+# vessel pipeline instead (scripts/run-simulator.sh, unaffected by this variable,
+# remains directly runnable for that path).
+SOURCE ?= tdrive_data_v1
 
 .PHONY: help terraform-plan terraform-apply terraform-import-live \
         scheduler-pause scheduler-resume benchmark benchmark-full
@@ -20,8 +25,9 @@ help:
 	@echo "make terraform-import-live   - one-time: import existing live GCP resources into state"
 	@echo "make scheduler-pause         - pause both live Cloud Scheduler jobs"
 	@echo "make scheduler-resume        - resume coordinator-5sec-trigger (JOBS=... to override)"
-	@echo "make benchmark               - short (~2 min) end-to-end benchmark, pass/fail per stage"
-	@echo "make benchmark-full          - full 96-minute train-day replay benchmark"
+	@echo "make benchmark               - short (~2 min) taxi-burst end-to-end benchmark, pass/fail per stage"
+	@echo "make benchmark-full          - full 96-minute train-day taxi replay benchmark"
+	@echo "                                (SOURCE=ais_data_v1 to run either against the AIS pipeline instead)"
 	@echo ""
 	@echo "Individual scripts (scripts/*.sh, terraform/scripts/*.py) remain directly runnable."
 	@echo "terraform/Makefile has the full terraform target set (plan/apply/destroy/import-live/...)."
@@ -46,12 +52,13 @@ scheduler-pause:
 scheduler-resume:
 	$(MAKE) -C terraform scheduler-resume
 
-# Short, cheap benchmark: ~2 minutes of simulated traffic. Checks infra isn't
-# drifted (aborts on unexpected drift — pass SKIP_INFRA_CHECK=1 to bypass), pauses
-# the fan-out scheduler for a clean run, resets Redis/Pub/Sub state, replays traffic,
-# triggers ingestor-pull directly (never touches windower-tick's live paused state),
-# and reports PASS/FAIL per pipeline stage. Always resumes the scheduler after,
-# even on failure.
+# Short, cheap benchmark: ~2 minutes of real traffic (taxi records sliced from the
+# trainday workload by default — SOURCE=ais_data_v1 for the AIS vessel simulator
+# instead). Checks infra isn't drifted (aborts on unexpected drift — pass
+# SKIP_INFRA_CHECK=1 to bypass), pauses the fan-out scheduler for a clean run,
+# resets Redis/Pub/Sub state, replays traffic, triggers ingestor-pull directly
+# (never touches windower-tick's live paused state), and reports PASS/FAIL per
+# pipeline stage. Always resumes the scheduler after, even on failure.
 benchmark:
 	@if [ "$${SKIP_INFRA_CHECK:-}" != "1" ]; then \
 		make -C terraform plan-check ENV=$(ENV) || \
@@ -59,9 +66,9 @@ benchmark:
 	fi
 	$(MAKE) scheduler-pause
 	@trap 'make -C terraform scheduler-resume' EXIT; \
-	  bash scripts/reset-pipeline.sh --no-wait && \
-	  bash scripts/run-simulator.sh && \
-	  bash scripts/benchmark-check.sh
+	  bash scripts/reset-pipeline.sh --no-wait --source $(SOURCE) && \
+	  if [ "$(SOURCE)" = "tdrive_data_v1" ]; then bash scripts/run-taxi-burst.sh; else bash scripts/run-simulator.sh; fi && \
+	  bash scripts/benchmark-check.sh --source $(SOURCE)
 
 # Full 96-minute train-day replay. Requires the T-Drive workload CSV, which is a
 # one-time manual data-prep step (raw T-Drive taxi dataset + the
@@ -81,10 +88,10 @@ benchmark-full:
 	fi
 	$(MAKE) scheduler-pause
 	@trap 'make -C terraform scheduler-resume' EXIT; \
-	  bash scripts/reset-pipeline.sh --no-wait && \
+	  bash scripts/reset-pipeline.sh --no-wait --source $(SOURCE) && \
 	  INGESTOR_PULL_URL=$$(gcloud functions describe ingestor-pull --gen2 --region europe-west3 --project faastreams --format='value(serviceConfig.uri)') && \
 	  bash scripts/run-tdrive-replay.sh "$$INGESTOR_PULL_URL" trainday && \
-	  bash scripts/benchmark-check.sh --full
+	  bash scripts/benchmark-check.sh --full --source $(SOURCE)
 
 # No terraform-destroy wrapper here on purpose — ENV defaults to live, and destroy
 # should require deliberately typing `make -C terraform destroy ENV=...`.
