@@ -1,0 +1,94 @@
+sources:
+  ais_data_v1:
+    description: "AIS vessel tracking data"
+    csv_path: "gs://faastreams-config/ais.csv"
+    csv_delimiter: ","
+    arrival_mode: "constant"
+    constant_rate_hz: 100.0
+    scale_factor: 2.0
+    id_field: "MMSI"
+    timestamp_field: "# Timestamp"
+    timestamp_format: "02/01/2006 15:04:05"
+    lat_field: "Latitude"
+    lon_field: "Longitude"
+    columns:
+      MMSI:               { from_field: "MMSI",                type: VARCHAR }
+      Name:               { from_field: "Name",                type: VARCHAR }
+      Latitude:           { from_field: "Latitude",            type: DOUBLE,  required: true }
+      Longitude:          { from_field: "Longitude",           type: DOUBLE,  required: true }
+      SOG:                { from_field: "SOG",                 type: DOUBLE }
+      Timestamp:          { from_field: "# Timestamp",         type: VARCHAR }
+      NavigationalStatus: { from_field: "Navigational status", type: VARCHAR }
+    reference_tables:
+      towers:
+        columns:
+          tower_name:   VARCHAR
+          geom_wkt:     VARCHAR
+          threshold_nm: DOUBLE
+        rows:
+          - tower_name:   "Tower Alpha"
+            geom_wkt:     "POINT(10.2 57.1)"
+            threshold_nm: 5.0
+          - tower_name:   "Tower Beta"
+            geom_wkt:     "POINT(7.8 55.7)"
+            threshold_nm: 5.0
+          - tower_name:   "Tower Gamma"
+            geom_wkt:     "POINT(10.7 58.2)"
+            threshold_nm: 5.0
+  tdrive_data_v1:
+    version: "1"
+    description: "T-Drive moving-taxi GPS pings replayed with wall-clock timestamps."
+    csv_path: "data/tdrive_workload_trainday.csv"
+    csv_delimiter: ","
+    scale_factor: 1.0
+    id_field: "taxi_id"
+    timestamp_field: "ts"
+    timestamp_format: "2006-01-02T15:04:05Z07:00"
+    lat_field: "lat"
+    lon_field: "lon"
+    columns:
+      TaxiID:    { from_field: "taxi_id", type: VARCHAR,   required: true }
+      Timestamp: { from_field: "ts",      type: TIMESTAMP, required: true }
+      Longitude: { from_field: "lon",     type: DOUBLE,    required: true }
+      Latitude:  { from_field: "lat",     type: DOUBLE,    required: true }
+    reference_tables: {}
+queries:
+  - name: vessels_near_towers
+    data_source: ais_data_v1
+    window_type: tumbling
+    window_size: 60
+    query: >
+      SELECT
+        v.MMSI               AS mmsi,
+        v.Name                AS name,
+        v.SOG                 AS sog,
+        v.NavigationalStatus  AS navigationalStatus,
+        v.Timestamp           AS timestamp,
+        t.tower_name,
+        t.threshold_nm,
+        ROUND(
+          ST_Distance(
+            ST_Transform(ST_Point(v.Longitude, v.Latitude), 'EPSG:4326', 'EPSG:3857'),
+            ST_Transform(ST_GeomFromText(t.geom_wkt),       'EPSG:4326', 'EPSG:3857')
+          ) / 1852.0, 2
+        ) AS distance_nm
+      FROM events v
+      CROSS JOIN towers t
+      WHERE v.Latitude IS NOT NULL
+        AND v.Latitude BETWEEN -85 AND 85
+        AND v.Longitude BETWEEN -180 AND 180
+        AND ST_Distance(
+              ST_Transform(ST_Point(v.Longitude, v.Latitude), 'EPSG:4326', 'EPSG:3857'),
+              ST_Transform(ST_GeomFromText(t.geom_wkt),       'EPSG:4326', 'EPSG:3857')
+            ) / 1852.0 < t.threshold_nm
+    return_type: spatial
+    is_alert: true
+    alert_format: "VESSEL {mmsi} ({name}) passed within {distance_nm} nm of {tower_name} | sog={sog} kn | ts={timestamp}"
+  - name: taxi_hotspots
+    data_source: tdrive_data_v1
+    window_type: tumbling
+    window_size: 60
+    query: "SELECT ROUND(Longitude, 2) AS cell_lon, ROUND(Latitude, 2) AS cell_lat, COUNT(*) AS ping_count, COUNT(DISTINCT TaxiID) AS taxi_count FROM events GROUP BY cell_lon, cell_lat ORDER BY ping_count DESC LIMIT 20"
+    return_type: spatial
+    is_alert: false
+    alert_format: ""

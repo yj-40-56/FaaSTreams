@@ -5,6 +5,7 @@ RUNS=3
 LOG_DIR="./benchmark-runs"
 REDIS_HOST="10.101.64.19"
 ZONE="europe-west3-a"
+GCS_RESULTS_PATH="gs://faastreams-config/benchmark-results"
 mkdir -p "$LOG_DIR"
 
 echo "Updating config once before the runs"
@@ -39,6 +40,11 @@ for i in $(seq 1 $RUNS); do
   FAAS_FIRST_ESCAPED=$(echo "$FAAS_FIRST" | sed 's/"/""/g')
 
   echo "$i,$RUN_START,$RUN_END,\"$FLINK_FIRST_ESCAPED\",\"$FAAS_FIRST_ESCAPED\"" >> "$LOG_DIR/run-timestamps.csv"
+
+  # Back up results after every single run, so nothing is lost if Cloud Shell disconnects
+  gsutil cp "$LOG_DIR/run-timestamps.csv" "$GCS_RESULTS_PATH/run-timestamps.csv"
+  gsutil cp "$RUN_LOG" "$GCS_RESULTS_PATH/"
+  echo "Run $i results backed up to $GCS_RESULTS_PATH"
 
   if [ "$i" -lt "$RUNS" ]; then
     echo "Waiting 60s before next run."

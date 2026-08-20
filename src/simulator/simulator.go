@@ -4,16 +4,19 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"io"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"simulator/config"
 
 	"cloud.google.com/go/pubsub"
+	"cloud.google.com/go/storage"
 )
 
-// Simulator reads events from a CSV file and published them to a Pub/sub topic, used for local testing
+// Simulator reads events from a CSV file (local path or gs:// path) and publishes them to a Pub/Sub topic
 type Simulator struct {
 	topic      *pubsub.Topic
 	sourceName string
@@ -30,11 +33,35 @@ func NewSimulator(topic *pubsub.Topic, sourceName string, source config.Source, 
 	}
 }
 
-// Run Extract data from csv and publish each event to Pub/Sub topic
+// openCsvSource opens the CSV either from GCS (if CsvPath starts with gs://) or from local disk.
+// Returns a ReadCloser so the caller can defer Close() the same way regardless of source.
+func openCsvSource(ctx context.Context, path string) (io.ReadCloser, error) {
+	if strings.HasPrefix(path, "gs://") {
+		client, err := storage.NewClient(ctx)
+		if err != nil {
+			return nil, err
+		}
+		// gs://bucket/object/path.csv -> split into bucket + object
+		trimmed := strings.TrimPrefix(path, "gs://")
+		parts := strings.SplitN(trimmed, "/", 2)
+		bucket, object := parts[0], parts[1]
+
+		reader, err := client.Bucket(bucket).Object(object).NewReader(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return reader, nil // storage.Reader closes the underlying client connection on Close()
+	}
+
+	// Local file fallback (still supported for local testing)
+	return os.Open(path)
+}
+
+// Run extracts data from the CSV source and publishes each event to Pub/Sub
 func (s *Simulator) Run(ctx context.Context) {
-	file, err := os.Open(s.source.CsvPath)
+	file, err := openCsvSource(ctx, s.source.CsvPath)
 	if err != nil {
-		log.Printf("[SIMULATOR] Failed to open CSV file: %v\n", err)
+		log.Printf("[SIMULATOR] Failed to open CSV source %q: %v\n", s.source.CsvPath, err)
 		return
 	}
 	defer file.Close()
@@ -80,7 +107,7 @@ func (s *Simulator) Run(ctx context.Context) {
 
 		row, err := reader.Read()
 		if err != nil {
-			if err.Error() == "EOF" {
+			if err == io.EOF {
 				log.Printf("[Sim] Finished: Reached end of file. Total lines: %d", lineCount)
 			} else {
 				log.Printf("[Sim] ERROR: Reader stopped at line %d: %v", lineCount, err)
@@ -108,13 +135,15 @@ func (s *Simulator) Run(ctx context.Context) {
 
 		elapsedTimeCSV := currentTimeCSV.Sub(firstTimestampCSV)
 
-		// If this event falls inside the blackout window (second hour), drop it.
-		// The first time we enter the window, sleep for the full blackout duration once,
+		// If this event falls inside the blackout window, drop it.
+		// The first time we enter the window, sleep for the full (scaled) blackout duration once,
 		// then keep dropping rows still inside it, then resume normally afterwards.
 		if elapsedTimeCSV >= blackoutStart && elapsedTimeCSV < blackoutEnd {
 			if !blackoutApplied {
 				blackoutDuration := blackoutEnd - blackoutStart
 				scaledBlackoutDuration := time.Duration(float64(blackoutDuration) / s.source.ScaleFactor)
+				log.Printf("[Sim] Entering blackout window: sleeping %s real time (CSV %s -> %s)",
+					scaledBlackoutDuration, blackoutStart, blackoutEnd)
 				time.Sleep(scaledBlackoutDuration)
 				simulationStartReal = simulationStartReal.Add(scaledBlackoutDuration)
 				blackoutApplied = true
