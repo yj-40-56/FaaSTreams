@@ -1,17 +1,21 @@
+# Deployed as "pinger" (matching the historically-intended name, restored by hand
+# outside Terraform on 2026-08-21 — see terraform/README.md's "pinger" note). The
+# source code is unchanged: it's still src/scheduler_task_queue's
+# windower_sub_1_trigger, just deployed under a different function name.
 data "archive_file" "source" {
   type        = "zip"
   source_dir  = "${path.root}/../src/scheduler_task_queue"
-  output_path = "${path.module}/scheduler-task-queue${var.name_suffix}.zip"
+  output_path = "${path.module}/pinger${var.name_suffix}.zip"
 }
 
 resource "google_storage_bucket_object" "source" {
-  name   = "scheduler-task-queue${var.name_suffix}-${data.archive_file.source.output_md5}.zip"
+  name   = "pinger${var.name_suffix}-${data.archive_file.source.output_md5}.zip"
   bucket = var.source_bucket
   source = data.archive_file.source.output_path
 }
 
 resource "google_cloudfunctions2_function" "this" {
-  name     = "scheduler-task-queue${var.name_suffix}"
+  name     = "pinger${var.name_suffix}"
   location = var.region
   project  = var.project_id
 

@@ -2,7 +2,20 @@
 
 Manages the live pipeline: `ingestor-pull` -> `windower` -> `worker` -> `data-sink`,
 the `ais-stream` / `ais-stream-pull` Pub/Sub topic + subscription,
-`scheduler-task-queue`, its Cloud Tasks queue, and the two Cloud Scheduler jobs.
+`pinger`, its Cloud Tasks queue, and the two Cloud Scheduler jobs.
+
+**Note on `pinger`**: this module (`terraform/modules/pinger`) deploys
+`src/scheduler_task_queue`'s code (entry point `windower_sub_1_trigger`) under the
+function name `pinger`. It was originally modeled here as `scheduler-task-queue`
+(the name it happened to be live under at the time), but on 2026-08-21 a teammate
+manually deleted `scheduler-task-queue` and redeployed the same code as `pinger`,
+repointing the live `coordinator-5sec-trigger` scheduler job at it — all outside
+Terraform. The module was renamed to match; `terraform import` was re-run against
+the `pinger` function/IAM binding to bring state back in sync. If this function
+gets renamed again by hand, expect `terraform plan` to show the function as
+missing (404) and want to recreate it under the old name — check Cloud Audit Logs
+(`protoPayload.methodName` on `resource.type="cloud_function"`) before assuming
+it's actually gone, the way this one wasn't.
 
 Redis and the VPC/subnet are pre-existing shared infrastructure, referenced by
 variable (IP/name) only — Terraform never creates, modifies, or destroys them.
@@ -59,7 +72,7 @@ direct-VPC-egress fields at all (no `network`/`subnetwork`/`network_interfaces`)
 `vpc_connector`/`vpc_connector_egress_settings` is the only VPC attachment mechanism
 this resource type supports, so that's what this config uses for every managed
 function. **`terraform plan` will show a network-config change on the four
-functions + scheduler-task-queue on first plan** — this is expected and, given the
+functions + pinger on first plan** — this is expected and, given the
 provider's limitations, unavoidable without switching resource types. Review it
 before applying so you understand it's attaching the connector, not a sign of
 something wrong with the config.

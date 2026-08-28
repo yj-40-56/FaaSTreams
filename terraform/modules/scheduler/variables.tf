@@ -10,7 +10,7 @@ variable "region" {
   type = string
 }
 
-variable "scheduler_task_queue_url" {
+variable "pinger_url" {
   type = string
 }
 

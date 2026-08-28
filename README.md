@@ -84,8 +84,9 @@ docker compose -f docker/docker-compose.dev.yml down
 ## E2E Example - Google Cloud
 
 The pipeline runs as five independently deployed Cloud Functions (gen2):
-`ingestor-pull`, `windower`, `worker`, `data-sink`, and `scheduler-task-queue`
-(fans out windower triggers via Cloud Tasks). Data flows
+`ingestor-pull`, `windower`, `worker`, `data-sink`, and `pinger`
+(fans out windower triggers via Cloud Tasks; deployed from `src/scheduler_task_queue`
+— renamed by hand on 2026-08-21, see `terraform/README.md`). Data flows
 `simulator → Pub/Sub (ais-stream) → ingestor-pull → Redis → windower → worker → data-sink`.
 
 The easiest way to provision all of this is `make terraform-apply` from the repo
@@ -94,7 +95,7 @@ versions of every resource below. To deploy a single component by hand instead
 (e.g. while iterating on one function), the individual scripts still work:
 `scripts/deploy-ingestor-pull.sh`, `scripts/deploy-windower.sh`,
 `scripts/deploy-worker.sh`, `scripts/deploy-data-sink.sh`,
-`scripts/deploy-scheduler-task-queue.sh`.
+`scripts/deploy-pinger.sh`.
 
 ```bash
 # ingestor-pull - HTTP-triggered by Cloud Scheduler, drains ais-stream-pull on a tick

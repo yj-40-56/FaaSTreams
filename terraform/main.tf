@@ -99,15 +99,17 @@ module "ingestor_pull" {
   source_bucket       = google_storage_bucket.functions_source.name
 }
 
-module "scheduler_task_queue" {
-  source           = "./modules/scheduler_task_queue"
+# Deployed live as "pinger" (renamed by hand from scheduler-task-queue on 2026-08-21
+# — see terraform/README.md). Source is still src/scheduler_task_queue.
+module "pinger" {
+  source           = "./modules/pinger"
   name_suffix      = local.name_suffix
   region           = var.region
   project_id       = var.project_id
-  memory           = var.scheduler_task_queue_memory
-  cpu              = var.scheduler_task_queue_cpu
-  concurrency      = var.scheduler_task_queue_concurrency
-  max_instances    = var.scheduler_task_queue_max_instances
+  memory           = var.pinger_memory
+  cpu              = var.pinger_cpu
+  concurrency      = var.pinger_concurrency
+  max_instances    = var.pinger_max_instances
   tasks_queue_name = google_cloud_tasks_queue.faastreams_queue.name
   windower_url     = module.windower.url
   vpc_connector    = local.vpc_connector_id
@@ -115,10 +117,10 @@ module "scheduler_task_queue" {
 }
 
 module "scheduler" {
-  source                   = "./modules/scheduler"
-  name_suffix              = local.name_suffix
-  project_id               = var.project_id
-  region                   = var.region
-  scheduler_task_queue_url = module.scheduler_task_queue.url
-  ingestor_pull_url        = module.ingestor_pull.url
+  source            = "./modules/scheduler"
+  name_suffix       = local.name_suffix
+  project_id        = var.project_id
+  region            = var.region
+  pinger_url        = module.pinger.url
+  ingestor_pull_url = module.ingestor_pull.url
 }

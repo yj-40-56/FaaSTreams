@@ -25,7 +25,7 @@ purge-env:
 	gcloud functions delete windower-$(ENV) --region=europe-west3 --gen2 --project=faastreams 2>/dev/null || true
 	gcloud functions delete worker-$(ENV) --region=europe-west3 --gen2 --project=faastreams 2>/dev/null || true
 	gcloud functions delete data-sink-$(ENV) --region=europe-west3 --gen2 --project=faastreams 2>/dev/null || true
-	gcloud functions delete scheduler-task-queue-$(ENV) --region=europe-west3 --gen2 --project=faastreams 2>/dev/null || true
+	gcloud functions delete pinger-$(ENV) --region=europe-west3 --gen2 --project=faastreams 2>/dev/null || true
 	gcloud scheduler jobs delete coordinator-5sec-trigger-$(ENV) --location=europe-west3 --project=faastreams --quiet 2>/dev/null || true
 	gcloud scheduler jobs delete windower-tick-$(ENV) --location=europe-west3 --project=faastreams --quiet 2>/dev/null || true
 
@@ -99,12 +99,12 @@ import-live:
 	$(TF) import -var-file="environments/live.tfvars" module.windower.google_cloudfunctions2_function.this projects/faastreams/locations/europe-west3/functions/windower
 	$(TF) import -var-file="environments/live.tfvars" module.worker.google_cloudfunctions2_function.this projects/faastreams/locations/europe-west3/functions/worker
 	$(TF) import -var-file="environments/live.tfvars" module.data_sink.google_cloudfunctions2_function.this projects/faastreams/locations/europe-west3/functions/data-sink
-	$(TF) import -var-file="environments/live.tfvars" module.scheduler_task_queue.google_cloudfunctions2_function.this projects/faastreams/locations/europe-west3/functions/scheduler-task-queue
+	$(TF) import -var-file="environments/live.tfvars" module.pinger.google_cloudfunctions2_function.this projects/faastreams/locations/europe-west3/functions/pinger
 	$(TF) import -var-file="environments/live.tfvars" module.ingestor_pull.google_cloud_run_v2_service_iam_member.public_invoker "projects/faastreams/locations/europe-west3/services/ingestor-pull roles/run.invoker allUsers"
 	$(TF) import -var-file="environments/live.tfvars" module.windower.google_cloud_run_v2_service_iam_member.public_invoker "projects/faastreams/locations/europe-west3/services/windower roles/run.invoker allUsers"
 	$(TF) import -var-file="environments/live.tfvars" module.worker.google_cloud_run_v2_service_iam_member.public_invoker "projects/faastreams/locations/europe-west3/services/worker roles/run.invoker allUsers"
 	$(TF) import -var-file="environments/live.tfvars" module.data_sink.google_cloud_run_v2_service_iam_member.public_invoker "projects/faastreams/locations/europe-west3/services/data-sink roles/run.invoker allUsers"
-	$(TF) import -var-file="environments/live.tfvars" module.scheduler_task_queue.google_cloud_run_v2_service_iam_member.public_invoker "projects/faastreams/locations/europe-west3/services/scheduler-task-queue roles/run.invoker allUsers"
+	$(TF) import -var-file="environments/live.tfvars" module.pinger.google_cloud_run_v2_service_iam_member.public_invoker "projects/faastreams/locations/europe-west3/services/pinger roles/run.invoker allUsers"
 	$(TF) import -var-file="environments/live.tfvars" module.scheduler.google_cloud_scheduler_job.fanout_trigger projects/faastreams/locations/europe-west3/jobs/coordinator-5sec-trigger
 	$(TF) import -var-file="environments/live.tfvars" module.scheduler.google_cloud_scheduler_job.ingestor_pull_trigger projects/faastreams/locations/europe-west3/jobs/windower-tick
 	$(TF) import -var-file="environments/live.tfvars" google_cloud_tasks_queue.faastreams_queue projects/faastreams/locations/europe-west3/queues/faastreams-queue

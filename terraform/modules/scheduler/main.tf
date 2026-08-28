@@ -3,9 +3,9 @@
 # Terraform declares. See terraform/Makefile's scheduler-pause/scheduler-resume targets.
 #
 # Job names are preserved as-is even though they're confusingly named (the "5sec"
-# job actually runs every minute and its 5s cadence comes from scheduler-task-queue's
-# internal Cloud Tasks fan-out; "windower-tick" actually targets ingestor-pull) —
-# renaming requires destroy+recreate in GCP and wasn't part of this change.
+# job actually runs every minute and its 5s cadence comes from pinger's internal
+# Cloud Tasks fan-out; "windower-tick" actually targets ingestor-pull) — renaming
+# requires destroy+recreate in GCP and wasn't part of this change.
 
 resource "google_cloud_scheduler_job" "fanout_trigger" {
   name      = "coordinator-5sec-trigger${var.name_suffix}"
@@ -16,7 +16,7 @@ resource "google_cloud_scheduler_job" "fanout_trigger" {
 
   http_target {
     http_method = "POST"
-    uri         = var.scheduler_task_queue_url
+    uri         = var.pinger_url
   }
 
   attempt_deadline = "180s"

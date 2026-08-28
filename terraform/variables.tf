@@ -169,31 +169,33 @@ variable "data_sink_concurrency" {
   default = 1
 }
 
-# --- scheduler-task-queue ---
-# memory/cpu/concurrency below are GCP auto-computed defaults, see windower note above.
+# --- pinger ---
+# Deployed live as "pinger" (renamed by hand from scheduler-task-queue on 2026-08-21
+# — see terraform/README.md). memory/cpu/concurrency below are GCP auto-computed
+# defaults, see windower note above.
 
-variable "scheduler_task_queue_memory" {
+variable "pinger_memory" {
   type    = string
   default = "256Mi"
 }
 
-variable "scheduler_task_queue_cpu" {
+variable "pinger_cpu" {
   type    = string
   default = "0.1666"
 }
 
-variable "scheduler_task_queue_max_instances" {
+variable "pinger_max_instances" {
   type    = number
   default = 3
 }
 
-variable "scheduler_task_queue_concurrency" {
+variable "pinger_concurrency" {
   type    = number
   default = 1
 }
 
 variable "tasks_queue_name" {
-  description = "Cloud Tasks queue used by scheduler-task-queue to fan out windower triggers."
+  description = "Cloud Tasks queue used by pinger to fan out windower triggers."
   type        = string
   default     = "faastreams-queue"
 }

@@ -18,9 +18,9 @@ output "data_sink_url" {
   value       = module.data_sink.url
 }
 
-output "scheduler_task_queue_url" {
-  description = "HTTP trigger URL for the scheduler-task-queue function."
-  value       = module.scheduler_task_queue.url
+output "pinger_url" {
+  description = "HTTP trigger URL for the pinger function."
+  value       = module.pinger.url
 }
 
 output "pubsub_topic" {
