@@ -57,9 +57,9 @@ def handler(request):
     try:
         try:
             print(f"{log_prefix} Fetching window from Redis...", flush=True)
-            records = fetch.fetch_window(window_start, window_end, query_config["data_source"])
-            print(f"{log_prefix} Loaded {len(records)} records.", flush=True)
-            results = analytics.run(records, query_config["query"], source)
+            payloads = fetch.fetch_window(window_start, window_end, query_config["data_source"])
+            print(f"{log_prefix} Loaded {len(payloads)} records.", flush=True)
+            results = analytics.run(payloads, query_config["query"], source)
             print(f"{log_prefix} {len(results)} result(s): {results}", flush=True)
         except Exception as e:
             print(f"{log_prefix} ERROR while processing window: {e}\n{traceback.format_exc()}", flush=True)
@@ -92,7 +92,7 @@ def handler(request):
 
         return {
             "results": results,
-            "records_processed": len(records),
+            "records_processed": len(payloads),
             "query_name": query_name,
             "return_type": query_config["return_type"]
         }
