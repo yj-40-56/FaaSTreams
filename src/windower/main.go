@@ -27,9 +27,12 @@ const (
 	pendingMetaKey = "pending:meta"
 	inflightKey    = "inflight"
 	dataKey        = "data"
-	lockKey        = "lock"
-	sessionKey     = "session"
-	activeKey      = "active"
+	watermarkKey   = "watermark"
+	// How long a watermark has held one value, across stateless ticks.
+	watermarkStallKey = "watermark:stall"
+	lockKey           = "lock"
+	sessionKey        = "session"
+	activeKey         = "active"
 )
 
 // Timing knobs.
@@ -48,8 +51,17 @@ const (
 	// Guards one query's window advance, one source's retry sweep, and one
 	// session's rollup against an overlapping tick.
 	lockTTL = 2 * time.Minute
-	// Events arriving later than this are too late to join a closing window.
+	// Ceiling on how far a window may close, and the fallback for a source no
+	// ingestor is reporting on.
 	lateBufferSeconds = 3
+	// Three missed 5s refreshes and the instance is treated as gone.
+	watermarkStaleAfterSeconds = 15
+	// Escape hatch: a stalled watermark holds its windows' events in Redis,
+	// ~2.6 MB/s at scale 24 against 1 GB, so this bounds memory as well as
+	// latency. Past it the clock decides again, loudly.
+	watermarkMaxStallSeconds = 180
+	// Above watermarkMaxStallSeconds, so a stall record cannot expire mid-stall.
+	watermarkStallTTL = time.Hour
 	// Backstop for a window whose trigger never reached a worker at all (a
 	// 429), so no lease was ever taken. Long enough to cover a cold start,
 	// no longer -- a leased window is skipped regardless of its age.
@@ -136,8 +148,13 @@ func init() {
 }
 
 func processWindows(w http.ResponseWriter, r *http.Request) {
-	now := time.Now().Add(-lateBufferSeconds * time.Second)
+	wallNow := time.Now().Add(-lateBufferSeconds * time.Second)
 	ctx := context.Background()
+
+	closeTimes := make(map[string]time.Time, len(coord.config.Sources))
+	for sourceName := range coord.config.Sources {
+		closeTimes[sourceName] = coord.closeTime(ctx, sourceName, wallNow)
+	}
 
 	var wg sync.WaitGroup
 	errCh := make(chan error, len(coord.config.Queries))
@@ -150,8 +167,13 @@ func processWindows(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		now, ok := closeTimes[q.DataSource]
+		if !ok {
+			now = wallNow
+		}
+
 		wg.Add(1)
-		go func(q config.Query) {
+		go func(q config.Query, now time.Time) {
 			defer wg.Done()
 			var err error
 			switch q.WindowType {
@@ -167,7 +189,7 @@ func processWindows(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				errCh <- err
 			}
-		}(q)
+		}(q, now)
 	}
 	wg.Wait()
 	close(errCh)
@@ -188,6 +210,94 @@ func processWindows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// parseWatermarkEntry reads one instance's `<watermark>:<published_at>` entry.
+func parseWatermarkEntry(raw string) (watermark, publishedAt int64, ok bool) {
+	parts := strings.SplitN(raw, ":", 2)
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	watermark, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return 0, 0, false
+	}
+	publishedAt, err = strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return 0, 0, false
+	}
+	return watermark, publishedAt, true
+}
+
+// watermarkStalled reports a watermark stuck at one value. Deliberately not its
+// distance from the clock: event time need not track processing time, so a
+// replay of historical data would trip that constantly while being healthy.
+func (c *Coordinator) watermarkStalled(ctx context.Context, source string, watermark int64) bool {
+	key := watermarkStallKey + ":" + source
+	nowSec := time.Now().Unix()
+
+	raw, err := c.rdb.Get(ctx, key).Result()
+	switch {
+	case err == nil:
+		if seen, since, ok := parseWatermarkEntry(raw); ok && seen == watermark {
+			return nowSec-since > watermarkMaxStallSeconds
+		}
+	case !errors.Is(err, redis.Nil):
+		// Unknown, not stalled: a hiccup must not force an advance.
+		log.Printf("[Watermark] source=%s stall check failed: %v", source, err)
+		return false
+	}
+
+	c.rdb.Set(ctx, key, fmt.Sprintf("%d:%d", watermark, nowSec), watermarkStallTTL)
+	return false
+}
+
+// closeTime reports how far a source's windows may close: min(wall clock,
+// watermark), so an ingestor falling behind delays windows rather than emptying
+// them. The minimum across instances -- one instance's promise says nothing
+// about another's backlog. The clock takes over when no promise is on offer.
+func (c *Coordinator) closeTime(ctx context.Context, source string, wallNow time.Time) time.Time {
+	entries, err := c.rdb.HGetAll(ctx, watermarkKey+":"+source).Result()
+	if err != nil {
+		log.Printf("[Watermark] source=%s read failed, closing on the clock: %v", source, err)
+		return wallNow
+	}
+
+	nowSec := time.Now().Unix()
+	var stale []string
+	var minWatermark int64
+	live := 0
+	for instance, raw := range entries {
+		watermark, publishedAt, ok := parseWatermarkEntry(raw)
+		if !ok || nowSec-publishedAt > watermarkStaleAfterSeconds {
+			stale = append(stale, instance)
+			continue
+		}
+		if live == 0 || watermark < minWatermark {
+			minWatermark = watermark
+		}
+		live++
+	}
+	if len(stale) > 0 {
+		c.rdb.HDel(ctx, watermarkKey+":"+source, stale...)
+	}
+	if live == 0 {
+		return wallNow
+	}
+
+	if c.watermarkStalled(ctx, source, minWatermark) {
+		log.Printf("[Watermark] source=%s FORCING ADVANCE: watermark=%d has not moved in %ds; closing on the clock and losing whatever arrives late",
+			source, minWatermark, watermarkMaxStallSeconds)
+		return wallNow
+	}
+
+	lag := wallNow.Unix() - minWatermark
+	if lag > 0 {
+		log.Printf("[Watermark] source=%s holding windows at watermark=%d (lag=%ds, instances=%d)",
+			source, minWatermark, lag, live)
+		return time.Unix(minWatermark, 0).UTC()
+	}
+	return wallNow
 }
 
 func (c *Coordinator) triggerWorker(windowStart, windowEnd time.Time, q config.Query, id string) error {
