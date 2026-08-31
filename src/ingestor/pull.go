@@ -11,6 +11,7 @@ import (
 
 	"cloud.google.com/go/pubsub/v2"
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
+	"github.com/mardentub/ingestor/watermark"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -41,6 +42,9 @@ const (
 var (
 	pullSub     *pubsub.Subscriber
 	windowerURL string
+
+	// Instance-scoped: the watermark must not move backwards between sessions.
+	tracker = watermark.New()
 )
 
 // batchItem pairs a parsed Redis write with the pubsub message it came from,
@@ -59,6 +63,7 @@ type batchItem struct {
 type writeBatcher struct {
 	items     chan batchItem
 	done      chan struct{}
+	tracker   *watermark.Tracker
 	processed *int64
 	failed    *int64
 
@@ -67,10 +72,11 @@ type writeBatcher struct {
 	stored *int64
 }
 
-func newWriteBatcher(processed, failed, stored *int64) *writeBatcher {
+func newWriteBatcher(tracker *watermark.Tracker, processed, failed, stored *int64) *writeBatcher {
 	b := &writeBatcher{
 		items:     make(chan batchItem, pipelineChannelBuffer),
 		done:      make(chan struct{}),
+		tracker:   tracker,
 		processed: processed,
 		failed:    failed,
 		stored:    stored,
@@ -163,6 +169,8 @@ func (b *writeBatcher) flush(batch []batchItem) {
 			atomic.AddInt64(b.stored, cmds[key].Val())
 		}
 		for _, it := range items {
+			// Before the ack: in flight ends when the write resolves, not sooner.
+			b.tracker.Done(it.rec.source, it.rec.ts, err == nil)
 			if err != nil {
 				log.Printf("[PullIngestor] nacking message: redis zadd failed: %v", err)
 				it.msg.Nack()
@@ -239,7 +247,11 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 	// SubPub-Pulling terminates
 	var processedSinceLastTick, failedSinceLastTick, storedSinceLastTick, isShuttingDown int64
 
-	batcher := newWriteBatcher(&processedSinceLastTick, &failedSinceLastTick, &storedSinceLastTick)
+	// Only an idle exit proves the subscription had nothing left to deliver,
+	// which is what makes the no-allowance snap below sound.
+	var idleExit int64
+
+	batcher := newWriteBatcher(tracker, &processedSinceLastTick, &failedSinceLastTick, &storedSinceLastTick)
 
 	// to ensure that the last Windower trigger strictly adheres to the interval of `interval` (5s) seconds
 	var lastTickTime atomic.Value
@@ -278,6 +290,7 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 				// in which case the last `interval` (5s) are not sufficient to determine whether the window should be triggered
 				log.Printf("[PullIngestor] processed %d messages, stored %d (deduped %d)",
 					currentProcessed, currentStored, currentProcessed-currentStored)
+				publishWatermarks(sessionCtx, tracker, false)
 				triggerWindower()
 
 			case <-sessionCtx.Done():
@@ -294,6 +307,7 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 	receiveCtx, cancelReceive := context.WithCancel(sessionCtx)
 	idleTimer := time.AfterFunc(drainIdleWindow, func() {
 		log.Printf("[PullIngestor] %v of absolute silence (queue empty). Terminating", drainIdleWindow)
+		atomic.StoreInt64(&idleExit, 1)
 		cancelReceive()
 	})
 
@@ -315,6 +329,7 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 			atomic.AddInt64(&processedSinceLastTick, 1)
 			return
 		}
+		tracker.Begin(rec.source, rec.ts)
 		batcher.add(batchItem{rec: rec, msg: msg})
 	})
 
@@ -365,6 +380,7 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[PullIngestor] processed %d messages, stored %d (deduped %d), session_elapsed=%s",
 		finalProcessed, finalStored, finalProcessed-finalStored, time.Since(sessionStart))
+	publishWatermarks(context.Background(), tracker, atomic.LoadInt64(&idleExit) == 1)
 	triggerWindower()
 
 	w.WriteHeader(http.StatusOK)
