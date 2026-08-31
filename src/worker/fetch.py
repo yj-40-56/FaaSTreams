@@ -78,7 +78,8 @@ def fetch_window(window_start: int, window_end: int, data_source: str) -> list[s
     """
     r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
     key = f"{DATA_KEY_PREFIX}:{data_source}"
-    members = r.zrangebyscore(key, window_start, window_end)
+    # Exclusive end: the windower emits [start, end).
+    members = r.zrangebyscore(key, window_start, f"({window_end}")
     print(f"[Fetch] Found {len(members)} member(s) in '{key}' for {window_start}-{window_end}", flush=True)
     return members
 
@@ -102,5 +103,5 @@ def clear_pending(data_source: str, query_name: str, window_id: str,
 def delete_window(window_start: int, window_end: int, data_source: str) -> None:
     r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
     key = f"{DATA_KEY_PREFIX}:{data_source}"
-    r.zremrangebyscore(key, window_start, window_end)
+    r.zremrangebyscore(key, window_start, f"({window_end}")
     print(f"Deleted window {window_start} - {window_end} from Redis key '{key}'", flush=True)
