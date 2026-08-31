@@ -290,7 +290,7 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 				// in which case the last `interval` (5s) are not sufficient to determine whether the window should be triggered
 				log.Printf("[PullIngestor] processed %d messages, stored %d (deduped %d)",
 					currentProcessed, currentStored, currentProcessed-currentStored)
-				publishWatermarks(sessionCtx, tracker, false)
+				publishWatermarks(tracker, false)
 				triggerWindower()
 
 			case <-sessionCtx.Done():
@@ -380,7 +380,7 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[PullIngestor] processed %d messages, stored %d (deduped %d), session_elapsed=%s",
 		finalProcessed, finalStored, finalProcessed-finalStored, time.Since(sessionStart))
-	publishWatermarks(context.Background(), tracker, atomic.LoadInt64(&idleExit) == 1)
+	publishWatermarks(tracker, atomic.LoadInt64(&idleExit) == 1)
 	triggerWindower()
 
 	w.WriteHeader(http.StatusOK)

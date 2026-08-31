@@ -31,11 +31,17 @@ func newInstanceID() string {
 
 // publishWatermarks writes this instance's watermark per source. Redis rather
 // than the windower trigger's body, so a tick the ingestor did not cause sees it.
-func publishWatermarks(ctx context.Context, t *watermark.Tracker, idle bool) {
+//
+// Own context, like writeBatcher.flush: a session's last publish fires as the
+// session deadline expires.
+func publishWatermarks(t *watermark.Tracker, idle bool) {
 	samples := t.Watermarks(idle)
 	if len(samples) == 0 {
 		return
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
 	now := time.Now().Unix()
 	pipe := rdb.Pipeline()
