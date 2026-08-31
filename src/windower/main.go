@@ -30,6 +30,8 @@ const (
 	watermarkKey   = "watermark"
 	// How long a watermark has held one value, across stateless ticks.
 	watermarkStallKey = "watermark:stall"
+	// Highest watermark ever acted on: no later publisher may lower it.
+	watermarkFloorKey = "watermark:floor"
 	lockKey           = "lock"
 	sessionKey        = "session"
 	activeKey         = "active"
@@ -62,6 +64,8 @@ const (
 	watermarkMaxStallSeconds = 180
 	// Above watermarkMaxStallSeconds, so a stall record cannot expire mid-stall.
 	watermarkStallTTL = time.Hour
+	// Long enough to survive a lull, short enough not to bind the next run.
+	watermarkFloorTTL = time.Hour
 	// Backstop for a window whose trigger never reached a worker at all (a
 	// 429), so no lease was ever taken. Long enough to cover a cold start,
 	// no longer -- a leased window is skipped regardless of its age.
@@ -212,6 +216,18 @@ func processWindows(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// raiseWatermarkFloor returns the highest watermark acted on for a source. A
+// script because two ticks reading and writing separately could lower it.
+var raiseWatermarkFloor = redis.NewScript(`
+local candidate = tonumber(ARGV[1])
+local floor = tonumber(redis.call('GET', KEYS[1]))
+if floor == nil or candidate > floor then
+    floor = candidate
+end
+redis.call('SET', KEYS[1], string.format('%d', floor), 'EX', ARGV[2])
+return floor
+`)
+
 // parseWatermarkEntry reads one instance's `<watermark>:<published_at>` entry.
 func parseWatermarkEntry(raw string) (watermark, publishedAt int64, ok bool) {
 	parts := strings.SplitN(raw, ":", 2)
@@ -283,6 +299,22 @@ func (c *Coordinator) closeTime(ctx context.Context, source string, wallNow time
 	}
 	if live == 0 {
 		return wallNow
+	}
+
+	// A fresh instance's watermark is built from the few messages it happened to
+	// drain, so it can sit behind what an earlier one promised. Honouring the
+	// floor exposes nothing that promise did not: windows have closed on it.
+	floor, err := raiseWatermarkFloor.Run(ctx, c.rdb,
+		[]string{watermarkFloorKey + ":" + source},
+		strconv.FormatInt(minWatermark, 10),
+		strconv.Itoa(int(watermarkFloorTTL.Seconds())),
+	).Int64()
+	if err != nil {
+		log.Printf("[Watermark] source=%s floor check failed, using the raw minimum: %v", source, err)
+	} else if floor > minWatermark {
+		log.Printf("[Watermark] source=%s watermark=%d is below the %d already promised; holding the floor",
+			source, minWatermark, floor)
+		minWatermark = floor
 	}
 
 	if c.watermarkStalled(ctx, source, minWatermark) {
