@@ -45,6 +45,17 @@ resource "google_cloudfunctions2_function" "this" {
       REDIS_KEY  = var.redis_key
     }
   }
+
+  # Attaching a VPC connector broke ingestor-pull/windower in production on
+  # 2026-08-19 (fixed by hand via --clear-vpc-connector, see terraform/README.md);
+  # applying the same caution here even though no fix was needed for data-sink yet —
+  # defer to whatever's live instead of fighting it on every apply.
+  lifecycle {
+    ignore_changes = [
+      service_config[0].vpc_connector,
+      service_config[0].vpc_connector_egress_settings,
+    ]
+  }
 }
 
 resource "google_cloud_run_v2_service_iam_member" "public_invoker" {
