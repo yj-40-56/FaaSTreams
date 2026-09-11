@@ -29,11 +29,6 @@ purge-env:
 	gcloud scheduler jobs delete coordinator-5sec-trigger-$(ENV) --location=europe-west3 --project=faastreams --quiet 2>/dev/null || true
 	gcloud scheduler jobs delete windower-tick-$(ENV) --location=europe-west3 --project=faastreams --quiet 2>/dev/null || true
 
-# Save the most recent window results from Cloud Logging to results/.
-# Run immediately after a benchmark run finishes.
-save-results:
-	python3 scripts/save_results.py --env=$(ENV) --project=faastreams
-
 # google_cloud_scheduler_job has no pause/enabled field in the provider — pausing is
 # an imperative gcloud action, not something `terraform apply` can express.
 # scheduler-pause pauses both live jobs unconditionally (clean state before a benchmark run).
@@ -108,10 +103,30 @@ import-live:
 	$(TF) import -var-file="environments/live.tfvars" module.scheduler.google_cloud_scheduler_job.fanout_trigger projects/faastreams/locations/europe-west3/jobs/coordinator-5sec-trigger
 	$(TF) import -var-file="environments/live.tfvars" module.scheduler.google_cloud_scheduler_job.ingestor_pull_trigger projects/faastreams/locations/europe-west3/jobs/windower-tick
 	$(TF) import -var-file="environments/live.tfvars" google_cloud_tasks_queue.faastreams_queue projects/faastreams/locations/europe-west3/queues/faastreams-queue
+	$(TF) import -var-file="environments/live.tfvars" 'google_vpc_access_connector.this[0]' projects/faastreams/locations/europe-west3/connectors/redis-eu-west3-connector
+	$(MAKE) import-redis
 	@echo ""
 	@echo "Import batch complete. Run 'make plan ENV=live' now and review the diff"
 	@echo "carefully before ever running apply — it must show only the expected"
 	@echo "net-new additions (functions_source bucket + objects), not changes to"
 	@echo "anything just imported."
 
-.PHONY: bucket-init purge-env save-results scheduler-pause scheduler-resume init validate plan plan-check apply destroy import-live state show
+# Adopts the EXISTING Memorystore instance into state. Split out of import-live
+# because it needs redis_instance_name set in environments/live.tfvars first —
+# without it Terraform would CREATE a second, billable Redis on the next apply
+# instead of managing the real one. Fails with that instruction rather than
+# guessing a name.
+import-redis:
+	@grep -qE '^[[:space:]]*redis_instance_name[[:space:]]*=' environments/live.tfvars || { \
+		echo "redis_instance_name is not set in terraform/environments/live.tfvars."; \
+		echo "Find the real instance ID first:"; \
+		echo "  gcloud redis instances list --project=faastreams --region=europe-west3"; \
+		echo "then set it in live.tfvars and re-run. Do NOT guess — a wrong name creates"; \
+		echo "a second Redis instead of adopting the existing one."; \
+		exit 1; \
+	}
+	$(TF) workspace select -or-create live
+	$(TF) import -var-file="environments/live.tfvars" 'google_redis_instance.this[0]' \
+		"projects/faastreams/locations/europe-west3/instances/$$(sed -nE 's/^[[:space:]]*redis_instance_name[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' environments/live.tfvars)"
+
+.PHONY: bucket-init purge-env scheduler-pause scheduler-resume init validate plan plan-check apply destroy import-live import-redis state show

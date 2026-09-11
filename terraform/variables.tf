@@ -16,31 +16,87 @@ variable "region" {
   default     = "europe-west3"
 }
 
-# --- Redis / VPC: referenced only. Terraform never creates, modifies, or destroys
-# these — they're pre-existing shared infrastructure. ---
+# --- Redis / VPC: managed here. Both are shared, pre-existing, singleton objects
+# that predate this config — IMPORT them, never let Terraform create them fresh.
+# See shared_infra.tf for the ownership model and terraform/README.md for the
+# import procedure. There is deliberately no `redis_host`/`redis_port` variable
+# any more: those are now read off the managed instance (main.tf's locals), so the
+# pipeline can no longer be pointed at a Redis that Terraform doesn't know about. ---
 
-variable "redis_host" {
-  description = "Private IP of the shared Cloud Memorystore Redis instance."
+# No default, on purpose. Terraform manages this instance, so a wrong or guessed
+# name would not adopt the existing Redis — it would stand up a SECOND, billable
+# one and leave the real pipeline's data behind on the old one. Confirm the real
+# name first and set it in environments/live.tfvars:
+#   gcloud redis instances list --project=faastreams --region=europe-west3
+variable "redis_instance_name" {
+  description = "Instance ID of the shared Memorystore Redis instance. No default: see the comment above before setting it."
   type        = string
-  default     = "10.101.64.19"
 }
 
-variable "redis_port" {
-  description = "Redis port."
+variable "redis_tier" {
+  description = "Memorystore service tier. Live is Basic/standalone (gcloud.md)."
   type        = string
-  default     = "6379"
+  default     = "BASIC"
 }
 
-# Confirmed via `terraform providers schema -json` (provider hashicorp/google
-# v5.45.2): google_cloudfunctions2_function.service_config has no direct-VPC-egress
-# fields (no network/subnetwork/network_interfaces) — vpc_connector is the only VPC
-# attachment mechanism this resource type supports, so that's what every managed
-# function uses. Live functions currently use direct VPC egress instead (no
-# connector), so expect a network-config diff on first plan — see terraform/README.md.
+# UNVERIFIED against live — the project's billing is disabled as of 2026-09-11, so
+# `gcloud redis instances describe` could not be run to confirm it. After import,
+# `terraform plan` will show the real value as a diff; correct this default to
+# match rather than applying the diff (applying it would resize live Redis).
+variable "redis_memory_size_gb" {
+  description = "Memorystore capacity in GB. UNVERIFIED against live — confirm after import."
+  type        = number
+  default     = 1
+}
+
+# UNVERIFIED against live, same reason as redis_memory_size_gb. Held in
+# shared_infra.tf's ignore_changes so an import can't trigger a version upgrade
+# (which would force replacement of the instance).
+variable "redis_version" {
+  description = "Memorystore Redis version, used only when creating from scratch. UNVERIFIED against live — confirm after import."
+  type        = string
+  default     = "REDIS_7_0"
+}
+
+variable "network_name" {
+  description = "VPC network Redis and the connector attach to. Read-only (data source) — Terraform never manages the project's default network."
+  type        = string
+  default     = "default"
+}
+
+# The `google_cloudfunctions2_function.service_config` schema (provider
+# hashicorp/google v5.45.2, confirmed via `terraform providers schema -json`) has no
+# direct-VPC-egress fields at all — no network/subnetwork/network_interfaces — so a
+# connector is the only VPC attachment mechanism available to the managed functions,
+# and that's what every one of them uses.
 variable "vpc_connector_name" {
-  description = "Name of the existing Serverless VPC Access connector (redis-eu-west3-connector), used as the VPC attachment for all managed functions."
+  description = "Name of the shared Serverless VPC Access connector."
   type        = string
   default     = "redis-eu-west3-connector"
+}
+
+# Connector settings below were read from the live API on 2026-09-11 and match it
+# exactly. ip_cidr_range forces replacement if changed — and replacing the connector
+# severs every function from Redis — so treat it as fixed.
+variable "vpc_connector_cidr" {
+  description = "/28 the connector's instances occupy."
+  type        = string
+  default     = "10.8.0.0/28"
+}
+
+variable "vpc_connector_machine_type" {
+  type    = string
+  default = "e2-micro"
+}
+
+variable "vpc_connector_min_instances" {
+  type    = number
+  default = 2
+}
+
+variable "vpc_connector_max_instances" {
+  type    = number
+  default = 3
 }
 
 # --- Query config: referenced only, same reasoning as Redis/VPC. The GCS object's

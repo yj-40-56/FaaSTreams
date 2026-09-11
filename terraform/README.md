@@ -1,8 +1,21 @@
 # FaaSTreams Terraform
 
-Manages the live pipeline: `ingestor-pull` -> `windower` -> `worker` -> `data-sink`,
-the `ais-stream` / `ais-stream-pull` Pub/Sub topic + subscription,
-`pinger`, its Cloud Tasks queue, and the two Cloud Scheduler jobs.
+**Scope: infrastructure only.** Terraform stands up everything the pipeline runs
+on; it does not run benchmarks. Benchmark orchestration lives in the repo-root
+`Makefile` and `scripts/` (`make benchmark`, `scripts/save-results.py`) and is
+deliberately kept out of this directory.
+
+What it manages:
+
+| | |
+|---|---|
+| Services | `ingestor-pull` -> `windower` -> `worker` -> `data-sink`, plus `pinger` |
+| Redis | the shared Memorystore instance every service reads/writes |
+| VPC | the `redis-eu-west3-connector` Serverless VPC Access connector the services egress through |
+| Pub/Sub | the `ais-stream` topic and `ais-stream-pull` subscription |
+| Cloud Tasks | the `faastreams-queue` that `pinger` fans out through |
+| Cloud Scheduler | `coordinator-5sec-trigger` and `windower-tick` |
+| Storage | the `-tf-functions-source` bucket holding zipped function sources |
 
 **Note on `pinger`**: this module (`terraform/modules/pinger`) deploys
 `src/scheduler_task_queue`'s code (entry point `windower_sub_1_trigger`) under the
@@ -17,8 +30,24 @@ missing (404) and want to recreate it under the old name — check Cloud Audit L
 (`protoPayload.methodName` on `resource.type="cloud_function"`) before assuming
 it's actually gone, the way this one wasn't.
 
-Redis and the VPC/subnet are pre-existing shared infrastructure, referenced by
-variable (IP/name) only — Terraform never creates, modifies, or destroys them.
+## Shared infrastructure: Redis and the VPC connector
+
+Redis and the VPC connector (`terraform/shared_infra.tf`) are **singletons** — one
+of each exists for the whole project, and every environment shares them rather than
+cloning them. Sandbox envs already shared live's Redis in practice (every env
+pointed at the same hardcoded IP); cloning a Memorystore instance per sandbox would
+bill real money to isolate something Redis key prefixes already isolate.
+
+Only the `live` workspace declares them as resources; other workspaces read the same
+objects through data sources, so a sandbox apply can't fight live over ownership.
+Both carry `prevent_destroy = true` — destroying the Redis wipes every window and
+result the pipeline has accumulated, and destroying the connector severs all five
+functions from Redis at once.
+
+They predate this config and were created by hand, so **they must be imported, never
+created fresh** — see the import procedure below. The project's `default` VPC network
+is *not* managed (it's shared with the `redis-bastion` VM and the hand-deployed push
+ingestor); Terraform reads it through a data source.
 
 **Push and pull ingestors must never run simultaneously** — they write the same
 Redis keys. This repo's live pipeline uses the pull ingestor (`ingestor-pull`); the
@@ -36,6 +65,11 @@ Terraform and should not be deployed while `ingestor-pull` is live.
   provider registry host", check for that header; a VPN out of the blocked region
   resolves it.
 - GCS state bucket exists (`make -C terraform bucket-init` if not)
+- **Billing enabled on the `faastreams` project.** As of 2026-09-11 it is *not*:
+  `gcloud redis instances list` and `gcloud functions list` both fail with
+  `BILLING_DISABLED` / "please check billing account associated". Nothing in this
+  directory can `plan`, `apply`, or `import` until that is restored, and the live
+  resources' current state cannot be read back to confirm this config matches them.
 
 ## First-time setup: importing the live pipeline
 
@@ -45,16 +79,39 @@ The live resources listed above already exist in GCP, deployed by hand — **do 
 `apply` before importing them**, or Terraform will try to create duplicates and
 fail on "already exists" (or worse, succeed and orphan the real ones).
 
+First, set the Redis instance's real ID — `import-live` cannot run without it:
+
+```bash
+gcloud redis instances list --project=faastreams --region=europe-west3
+```
+
+and put that ID in `environments/live.tfvars` as `redis_instance_name`. There is no
+default for it on purpose: Terraform now manages the Memorystore instance, so a
+guessed name would not adopt the existing Redis — it would stand up a **second,
+billable** one and strand the pipeline's data on the old one. `make import-redis`
+refuses to run until the variable is set.
+
 ```bash
 cd terraform
 make init
-make import-live      # imports every live resource into the `live` workspace, one at a time
+make import-live      # imports every live resource into the `live` workspace, one at a
+                      # time — including the VPC connector, and Redis via import-redis
 make plan ENV=live    # MUST show only new-resource additions (functions_source
                        # bucket + its objects, IAM bindings) — never an unexplained
                        # update/destroy on anything just imported. If you see one,
                        # stop and fix the .tf default that doesn't match live before
                        # proceeding.
 ```
+
+### Redis attributes this config had to guess
+
+`redis_memory_size_gb` and `redis_version` could not be read back from the live
+instance (billing disabled, see Prerequisites), so their defaults in `variables.tf`
+are **unverified**. After import, `plan` will show the real values as a diff —
+**correct the defaults to match live rather than applying the diff**, since applying
+it would resize or upgrade the running Redis. `redis_version` and `reserved_ip_range`
+are held in `ignore_changes` (both force replacement of the instance) until the real
+values are confirmed and written in.
 
 Only after a clean `plan` review:
 
@@ -65,8 +122,8 @@ make apply ENV=live   # interactive confirm (no -auto-approve is ever passed)
 ### Known first-plan diff: VPC egress
 
 Live functions currently use **direct VPC egress** (`--network default --subnet
-.../default`), not the pre-existing `redis-eu-west3-connector` Serverless VPC
-Access connector. Confirmed via `terraform providers schema -json` against provider
+.../default`), not the `redis-eu-west3-connector` Serverless VPC Access connector
+(which this config now manages — see Shared infrastructure above). Confirmed via `terraform providers schema -json` against provider
 `hashicorp/google` v5.45.2: `google_cloudfunctions2_function.service_config` has no
 direct-VPC-egress fields at all (no `network`/`subnetwork`/`network_interfaces`) —
 `vpc_connector`/`vpc_connector_egress_settings` is the only VPC attachment mechanism
@@ -108,12 +165,13 @@ HTTP instead of relying on `windower-tick`.
 
 ## Saving benchmark results
 
+Moved out of this directory — it is benchmark tooling, not infrastructure:
+
 ```bash
-make -C terraform save-results ENV=live
+make save-results ENV=live      # from the repo root; writes results/{env}_{timestamp}.json
 ```
 
-Reads recent `windower`/`worker` Cloud Logging output and writes
-`results/{env}_{timestamp}.json`. For ad hoc log inspection:
+For ad hoc log inspection:
 
 ```bash
 gcloud logging read \
@@ -157,4 +215,5 @@ fully separate, `-<name>`-suffixed set of resources that never touches live.
 |---------|-------------|
 | `make -C terraform plan-check ENV=live` | `terraform plan -detailed-exitcode`, used by `make benchmark`'s drift guard |
 | `make -C terraform purge-env ENV=<name>` | Delete orphaned GCP resources for a non-live sandbox env not in Terraform state |
-| `make -C terraform destroy ENV=<name>` | Destroy an environment's resources. No root-level wrapper exists for this — deliberately, since `ENV` defaults to `live`. |
+| `make -C terraform destroy ENV=<name>` | Destroy an environment's resources. No root-level wrapper exists for this — deliberately, since `ENV` defaults to `live`. Redis and the VPC connector survive it (`prevent_destroy`). |
+| `make -C terraform import-redis` | Adopt the existing Memorystore instance into state. Needs `redis_instance_name` set first; refuses to guess. |

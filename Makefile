@@ -22,7 +22,7 @@ SOURCE ?= tdrive_data_v1
 SMOKE_DURATION_S ?= 15
 
 .PHONY: help terraform-plan terraform-apply terraform-import-live terraform-state terraform-show \
-        scheduler-pause scheduler-resume benchmark-smoke benchmark benchmark-full
+        scheduler-pause scheduler-resume save-results benchmark-smoke benchmark benchmark-full
 
 help:
 	@echo "make terraform-plan          - preview infra changes (ENV=$(ENV)), safe anytime"
@@ -37,11 +37,19 @@ help:
 	@echo "make benchmark-full          - full 96-minute train-day taxi replay benchmark"
 	@echo "                                (SOURCE=ais_data_v1 to run either against the AIS pipeline instead)"
 	@echo ""
-	@echo "Individual scripts (scripts/*.sh, terraform/scripts/*.py) remain directly runnable."
+	@echo "make save-results            - save the last benchmark window from Cloud Logging to results/"
+	@echo ""
+	@echo "Individual scripts (scripts/*.sh, scripts/*.py) remain directly runnable."
 	@echo "terraform/Makefile has the full terraform target set (plan/apply/destroy/import-live/...)."
 
 terraform-plan:
 	$(MAKE) -C terraform plan ENV=$(ENV)
+
+# Benchmark tooling, not infra — this used to be `make -C terraform save-results`,
+# back when terraform/ was also expected to drive benchmark runs. terraform/ now
+# provisions infrastructure only.
+save-results:
+	python3 scripts/save-results.py --env=$(ENV) --project=faastreams
 
 terraform-apply:
 ifeq ($(ENV),live)

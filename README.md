@@ -8,14 +8,19 @@ Live data is pulled from a Pub/Sub subscription by `ingestor-pull` on a schedule
 
 ## Provisioning and benchmarking
 
-`terraform/` manages the live pipeline (`ingestor-pull`, `windower`, `worker`,
-`data-sink`, `ais-stream-pull`, the scheduler jobs). From the repo root:
+`terraform/` provisions **all** of the infrastructure and nothing else: the five
+services (`ingestor-pull`, `windower`, `worker`, `data-sink`, `pinger`), the shared
+Memorystore Redis instance, the Serverless VPC Access connector they reach it
+through, the `ais-stream` Pub/Sub topic + subscription, the `faastreams-queue` Cloud
+Tasks queue, and the two Cloud Scheduler jobs. Benchmarks are *not* run through
+Terraform — that is this Makefile's job. From the repo root:
 
 ```bash
 make terraform-plan          # preview infra changes, safe anytime
 make terraform-apply         # apply after reviewing the plan
 make benchmark                # short (~2 min) end-to-end run, pass/fail per stage
 make benchmark-full           # full 96-minute train-day replay
+make save-results             # save the last benchmark window to results/
 ```
 
 See `terraform/README.md` for first-time setup (importing the already-live

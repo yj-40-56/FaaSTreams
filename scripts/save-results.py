@@ -4,8 +4,11 @@ Reads the most recent benchmark window results from Cloud Logging (windower +
 worker) and saves them to results/{env}_{timestamp}.json.
 
 Usage:
-  python3 scripts/save_results.py --env=live --project=faastreams
-  python3 scripts/save_results.py --env=live --freshness=10m
+  python3 scripts/save-results.py --env=live --project=faastreams
+  python3 scripts/save-results.py --env=live --freshness=10m
+
+Benchmark tooling, not infrastructure — deliberately lives outside terraform/,
+which provisions the pipeline and nothing else.
 """
 import argparse
 import ast
@@ -93,9 +96,12 @@ def main():
         "queries": queries,
     }
 
-    os.makedirs("results", exist_ok=True)
+    # Anchored to the repo root, not the caller's cwd, so results land in one place
+    # no matter where this is invoked from.
+    results_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "results")
+    os.makedirs(results_dir, exist_ok=True)
     ts_label = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
-    filename = f"results/{args.env}_{ts_label}.json"
+    filename = os.path.join(results_dir, f"{args.env}_{ts_label}.json")
 
     with open(filename, "w") as f:
         json.dump(output, f, indent=2, default=str)

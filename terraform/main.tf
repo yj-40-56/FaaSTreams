@@ -6,7 +6,12 @@ locals {
   topic_id        = "ais-stream"
   subscription_id = "ais-stream-pull${local.name_suffix}"
 
-  vpc_connector_id = "projects/${var.project_id}/locations/${var.region}/connectors/${var.vpc_connector_name}"
+  # Redis and the VPC connector are shared, singleton objects — owned by the live
+  # workspace, read by every other one. See shared_infra.tf.
+  redis_host = local.manage_shared_infra ? google_redis_instance.this[0].host : data.google_redis_instance.shared[0].host
+  redis_port = tostring(local.manage_shared_infra ? google_redis_instance.this[0].port : data.google_redis_instance.shared[0].port)
+
+  vpc_connector_id = local.manage_shared_infra ? google_vpc_access_connector.this[0].id : data.google_vpc_access_connector.shared[0].id
 }
 
 resource "google_storage_bucket" "functions_source" {
@@ -36,8 +41,8 @@ module "data_sink" {
   cpu           = var.data_sink_cpu
   concurrency   = var.data_sink_concurrency
   max_instances = var.data_sink_max_instances
-  redis_host    = var.redis_host
-  redis_port    = var.redis_port
+  redis_host    = local.redis_host
+  redis_port    = local.redis_port
   redis_key     = "analytics-results"
   vpc_connector = local.vpc_connector_id
   source_bucket = google_storage_bucket.functions_source.name
@@ -53,8 +58,8 @@ module "worker" {
   concurrency   = var.worker_concurrency
   max_instances = var.worker_max_instances
   timeout       = var.worker_timeout
-  redis_host    = var.redis_host
-  redis_port    = var.redis_port
+  redis_host    = local.redis_host
+  redis_port    = local.redis_port
   data_sink_url = module.data_sink.url
   vpc_connector = local.vpc_connector_id
   source_bucket = google_storage_bucket.functions_source.name
@@ -70,8 +75,8 @@ module "windower" {
   concurrency         = var.windower_concurrency
   max_instances       = var.windower_max_instances
   timeout             = var.windower_timeout
-  redis_host          = var.redis_host
-  redis_port          = var.redis_port
+  redis_host          = local.redis_host
+  redis_port          = local.redis_port
   query_config_bucket = var.query_config_bucket
   query_config_object = var.query_config_object
   worker_url          = module.worker.url
@@ -89,8 +94,8 @@ module "ingestor_pull" {
   concurrency         = var.ingestor_pull_concurrency
   max_instances       = var.ingestor_pull_max_instances
   timeout             = var.ingestor_pull_timeout
-  redis_host          = var.redis_host
-  redis_port          = var.redis_port
+  redis_host          = local.redis_host
+  redis_port          = local.redis_port
   query_config_bucket = var.query_config_bucket
   query_config_object = var.query_config_object
   subscription_id     = module.pubsub.subscription_id
