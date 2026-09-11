@@ -1,5 +1,5 @@
-// This file is duplicated verbatim in src/windower/config and src/simulator/config
-// (each is a separately deployed module, so it can't be a shared import). Keep all three in sync.
+// This file is duplicated verbatim in src/windower/config
+// (each is a separately deployed module, so it can't be a shared import). Keep both in sync.
 package config
 
 import (
@@ -36,22 +36,12 @@ type ReferenceTable struct {
 	Rows    []map[string]interface{} `yaml:"rows"    json:"rows"`
 }
 
-// Source scaleFactor compresses CSV event timestamps so data plays back faster than it was recorded.
-// Formula: scaleFactor = CSV duration / desired real duration
-//
-// | CSV data | Real time | scaleFactor |
-// |----------|-----------|-------------|
-// | 24h      | 24h       | 1.0         |
-// | 24h      | 1h        | 24.0        |
-// | 24h      | 30min     | 48.0        |
-// | 24h      | 10min     | 144.0       |
-// | 1h       | 1min      | 60.0        |
+// Source describes one input stream: how to read its timestamps and what
+// columns it carries. CSV playback settings are simulator-only and come from
+// the SIM_CSV_PATH / SIM_CSV_DELIMITER / SIM_SCALE_FACTOR env vars instead.
 type Source struct {
 	Version         string                    `yaml:"version"          json:"version"`
 	Description     string                    `yaml:"description"      json:"description"`
-	CsvPath         string                    `yaml:"csv_path"         json:"csv_path"`
-	CsvDelimiter    string                    `yaml:"csv_delimiter"    json:"csv_delimiter"`
-	ScaleFactor     float64                   `yaml:"scale_factor"     json:"scale_factor"`
 	IDField         string                    `yaml:"id_field"         json:"id_field"`
 	TimestampField  string                    `yaml:"timestamp_field"  json:"timestamp_field"`
 	TimestampFormat string                    `yaml:"timestamp_format" json:"timestamp_format"`

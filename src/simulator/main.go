@@ -4,10 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
-	"strconv"
 	"time"
-
-	"simulator/config"
 
 	"cloud.google.com/go/pubsub"
 )
@@ -17,7 +14,13 @@ func main() {
 
 	projectID := os.Getenv("PUBSUB_PROJECT_ID")
 	topicID := os.Getenv("PUBSUB_TOPIC_ID")
+
+	// Published on every event as "_source", the ingestor routes on it. Has to
+	// match a key under sources: in the query config
 	sourceName := os.Getenv("SOURCE_NAME")
+	if sourceName == "" {
+		log.Fatal("[Sim] SOURCE_NAME env var required")
+	}
 
 	var runtime time.Duration
 	if raw := os.Getenv("SIM_RUNTIME"); raw != "" {
@@ -28,21 +31,7 @@ func main() {
 		}
 	}
 
-	cfg := config.LoadConfig()
-
-	source, ok := cfg.Sources[sourceName]
-	if !ok {
-		log.Fatalf("[Sim] Unknown source %q — check SOURCE_NAME and config.yaml", sourceName)
-	}
-
-	if raw := os.Getenv("SIM_SCALE_FACTOR"); raw != "" {
-		scaleFactor, err := strconv.ParseFloat(raw, 64)
-		if err != nil {
-			log.Fatalf("[Sim] Invalid SIM_SCALE_FACTOR %q: %v", raw, err)
-		}
-		log.Printf("[Sim] Overriding scale_factor from config (%.1f) with SIM_SCALE_FACTOR=%.1f", source.ScaleFactor, scaleFactor)
-		source.ScaleFactor = scaleFactor
-	}
+	playback := loadPlayback()
 
 	client, err := pubsub.NewClient(ctx, projectID)
 	if err != nil {
@@ -86,6 +75,6 @@ func main() {
 	}
 
 	time.Sleep(5 * time.Second)
-	simulator := NewSimulator(topic, sourceName, source, runtime)
+	simulator := NewSimulator(topic, sourceName, playback, runtime)
 	simulator.Run(ctx)
 }
