@@ -1,9 +1,6 @@
 sources:
   ais_data_v1:
     description: "AIS vessel tracking data"
-    csv_path: "../../data/ais.csv"
-    csv_delimiter: ","
-    scale_factor: 1.0
     id_field: "MMSI"
     timestamp_field: "# Timestamp"
     timestamp_format: "02/01/2006 15:04:05"
@@ -36,9 +33,6 @@ sources:
 
     t-drive_data_v1:
       description: "T-Drive dataset: taxis in Beijing"
-      csv_path: "../../data/t-drive.csv"
-      csv_delimiter: ","
-      scale_factor: 1.0
       id_field: "taxi_id"
       timestamp_field: "timestamp"
       timestamp_format: "2006-01-02 15:04:05"
@@ -91,7 +85,7 @@ queries:
     query: "SELECT v.MMSI AS mmsi, v.Name AS name, v.SOG AS sog, v.NavigationalStatus AS navigationalStatus, v.Timestamp AS timestamp, z.zone_name, z.threshold_nm, ROUND(ST_Distance(ST_Transform(ST_Point(v.Longitude, v.Latitude), 'EPSG:4326', 'EPSG:3857'), ST_Transform(ST_GeomFromText(z.geom_wkt), 'EPSG:4326', 'EPSG:3857')) / 1852.0, 2) AS distance_nm FROM events v CROSS JOIN zones z WHERE v.Latitude IS NOT NULL AND ST_Distance(ST_Transform(ST_Point(v.Longitude, v.Latitude), 'EPSG:4326', 'EPSG:3857'), ST_Transform(ST_GeomFromText(z.geom_wkt), 'EPSG:4326', 'EPSG:3857')) / 1852.0 < z.threshold_nm ORDER BY distance_nm"
     return_type: spatial
     is_alert: true
-    alert_format: "{mmsi} ({name}) — {distance_nm} nm from \"{zone_name}\" (threshold {threshold_nm} nm) | sog={sog} kn | status={navigationalStatus} | ts={timestamp}"
+    alert_format: '{mmsi} ({name}) — {distance_nm} nm from "{zone_name}" (threshold {threshold_nm} nm) | sog={sog} kn | status={navigationalStatus} | ts={timestamp}'
 
   #---------------------------------------------------
   # Temporal data queries, only object id and timestamp
