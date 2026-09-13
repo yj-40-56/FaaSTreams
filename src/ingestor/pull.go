@@ -61,14 +61,19 @@ type writeBatcher struct {
 	done      chan struct{}
 	processed *int64
 	failed    *int64
+
+	// Members actually added, summed from the ZADD replies. Diverges from
+	// processed when duplicate payloads collapse.
+	stored *int64
 }
 
-func newWriteBatcher(processed, failed *int64) *writeBatcher {
+func newWriteBatcher(processed, failed, stored *int64) *writeBatcher {
 	b := &writeBatcher{
 		items:     make(chan batchItem, pipelineChannelBuffer),
 		done:      make(chan struct{}),
 		processed: processed,
 		failed:    failed,
+		stored:    stored,
 	}
 	go b.run()
 	return b
@@ -154,6 +159,9 @@ func (b *writeBatcher) flush(batch []batchItem) {
 
 	for key, items := range groups {
 		err := cmds[key].Err()
+		if err == nil {
+			atomic.AddInt64(b.stored, cmds[key].Val())
+		}
 		for _, it := range items {
 			if err != nil {
 				log.Printf("[PullIngestor] nacking message: redis zadd failed: %v", err)
@@ -229,9 +237,9 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 	// `isShuttingDown` acts as a thread-safe coordination barrier (0 = active, 1 = stopping).
 	// It ensures the background ticker goroutine completely halts its triggers once the
 	// SubPub-Pulling terminates
-	var processedSinceLastTick, failedSinceLastTick, isShuttingDown int64
+	var processedSinceLastTick, failedSinceLastTick, storedSinceLastTick, isShuttingDown int64
 
-	batcher := newWriteBatcher(&processedSinceLastTick, &failedSinceLastTick)
+	batcher := newWriteBatcher(&processedSinceLastTick, &failedSinceLastTick, &storedSinceLastTick)
 
 	// to ensure that the last Windower trigger strictly adheres to the interval of `interval` (5s) seconds
 	var lastTickTime atomic.Value
@@ -260,6 +268,7 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 
 				currentProcessed := atomic.SwapInt64(&processedSinceLastTick, 0)
 				currentFailed := atomic.SwapInt64(&failedSinceLastTick, 0)
+				currentStored := atomic.SwapInt64(&storedSinceLastTick, 0)
 
 				if currentFailed > 0 {
 					log.Printf("[PullIngestor] %d messages failed", currentFailed)
@@ -267,7 +276,8 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 
 				// There could be cases where a window is 2xinterval (10s) long,
 				// in which case the last `interval` (5s) are not sufficient to determine whether the window should be triggered
-				log.Printf("[PullIngestor] processed %d messages", currentProcessed)
+				log.Printf("[PullIngestor] processed %d messages, stored %d (deduped %d)",
+					currentProcessed, currentStored, currentProcessed-currentStored)
 				triggerWindower()
 
 			case <-sessionCtx.Done():
@@ -351,8 +361,10 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 	}
 
 	finalProcessed := atomic.SwapInt64(&processedSinceLastTick, 0)
+	finalStored := atomic.SwapInt64(&storedSinceLastTick, 0)
 
-	log.Printf("[PullIngestor] processed %d messages, session_elapsed=%s", finalProcessed, time.Since(sessionStart))
+	log.Printf("[PullIngestor] processed %d messages, stored %d (deduped %d), session_elapsed=%s",
+		finalProcessed, finalStored, finalProcessed-finalStored, time.Since(sessionStart))
 	triggerWindower()
 
 	w.WriteHeader(http.StatusOK)

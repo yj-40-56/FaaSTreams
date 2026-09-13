@@ -25,3 +25,5 @@ target/
 
 data/
 *.csv
+# Go binaries built in place
+src/simulator/simulator

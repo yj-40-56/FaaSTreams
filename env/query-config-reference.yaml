@@ -15,21 +15,24 @@ sources:
       Timestamp:          { from_field: "# Timestamp",         type: VARCHAR }
       NavigationalStatus: { from_field: "Navigational status", type: VARCHAR }
     reference_tables:
-      towers:
+      zones:
         columns:
-          tower_name:   VARCHAR
+          zone_name:    VARCHAR
           geom_wkt:     VARCHAR
           threshold_nm: DOUBLE
         rows:
-          - tower_name:   "Tower Alpha"
-            geom_wkt:     "POINT(10.2 57.1)"
-            threshold_nm: 5.0
-          - tower_name:   "Tower Beta"
-            geom_wkt:     "POINT(7.8 55.7)"
-            threshold_nm: 5.0
-          - tower_name:   "Tower Gamma"
-            geom_wkt:     "POINT(10.7 58.2)"
-            threshold_nm: 5.0
+          - zone_name:    "Subsea Pipeline Corridor Kattegat"
+            geom_wkt:     "POLYGON((10.0 57.0, 10.5 57.0, 10.5 57.5, 10.0 57.5, 10.0 57.0))"
+            threshold_nm: 2.0
+          - zone_name:    "Offshore Wind Exclusion North Sea"
+            geom_wkt:     "POLYGON((7.5 55.5, 8.0 55.5, 8.0 56.0, 7.5 56.0, 7.5 55.5))"
+            threshold_nm: 2.0
+          - zone_name:    "Restricted Zone Skagerrak"
+            geom_wkt:     "POLYGON((10.5 58.0, 11.0 58.0, 11.0 58.5, 10.5 58.5, 10.5 58.0))"
+            threshold_nm: 2.0
+          - zone_name:    "Military Exercise Area Bornholm"
+            geom_wkt:     "POLYGON((15.5 55.5, 16.0 55.5, 16.0 56.0, 15.5 56.0, 15.5 55.5))"
+            threshold_nm: 3.0
 
     t-drive_data_v1:
       description: "T-Drive dataset: taxis in Beijing"
@@ -47,37 +50,6 @@ sources:
 
 queries:
   # Static data queries
-  - name: vessels_near_towers
-    data_source: ais_data_v1
-    window_type: tumbling
-    window_size: 60
-    query: >
-      SELECT
-        v.MMSI               AS mmsi,
-        v.Name               AS name,
-        v.SOG                AS sog,
-        v.NavigationalStatus AS navigationalStatus,
-        v.Timestamp          AS timestamp,
-        t.tower_name,
-        t.threshold_nm,
-        ROUND(
-          ST_Distance(
-            ST_Transform(ST_Point(v.Longitude, v.Latitude), 'EPSG:4326', 'EPSG:3857'),
-            ST_Transform(ST_GeomFromText(t.geom_wkt),       'EPSG:4326', 'EPSG:3857')
-          ) / 1852.0, 2
-        ) AS distance_nm
-      FROM events v
-      CROSS JOIN towers t
-      WHERE v.Latitude IS NOT NULL
-        AND ST_Distance(
-              ST_Transform(ST_Point(v.Longitude, v.Latitude), 'EPSG:4326', 'EPSG:3857'),
-              ST_Transform(ST_GeomFromText(t.geom_wkt),       'EPSG:4326', 'EPSG:3857')
-            ) / 1852.0 < t.threshold_nm
-      ORDER BY distance_nm
-    return_type: spatial
-    is_alert: true
-    alert_format: "VESSEL {mmsi} ({name}) passed within {distance_nm} nm of {tower_name} | sog={sog} kn | ts={timestamp}"
-
   - name: hazard_zones_proximity_alerts
     data_source: ais_data_v1
     window_type: tumbling
