@@ -250,6 +250,8 @@ variable "pinger_concurrency" {
   default = 1
 }
 
+# Base name of the queue; non-live envs get the "-<env_name>" suffix appended, the
+# same way every other resource does.
 variable "tasks_queue_name" {
   description = "Cloud Tasks queue used by pinger to fan out windower triggers."
   type        = string

@@ -3,7 +3,7 @@
 # config so import shows zero diff; adjust deliberately, not as a side effect of import.
 
 resource "google_cloud_tasks_queue" "faastreams_queue" {
-  name     = "faastreams-queue${local.name_suffix}"
+  name     = "${var.tasks_queue_name}${local.name_suffix}"
   project  = var.project_id
   location = var.region
 
