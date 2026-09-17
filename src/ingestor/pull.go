@@ -16,10 +16,11 @@ import (
 )
 
 const (
-	pullLockKey        = "lock:ingestor:pull"
-	pullLockTTL        = 7 * time.Second
-	drainIdleWindow    = 2000 * time.Millisecond
-	maxSessionDuration = 50 * time.Second
+	drainIdleWindow = 2000 * time.Millisecond
+
+	// Two scheduler jobs on alternate minutes each open one, so ticks never
+	// leave an unpulled stretch longer than a session start latency.
+	maxSessionDuration = 100 * time.Second
 	interval           = 5 * time.Second
 	maxDelay           = 1500 * time.Millisecond
 
@@ -211,31 +212,11 @@ func init() {
 // ingestPull is a Tick: it keeps a single Pub/Sub Receive session open for up
 // to maxSessionDuration, parsing and pipelining writes to Redis (via
 // writeBatcher) as messages arrive, while an internal ticker nudges windower
-// and renews the Redis lock every `interval`. The session ends early if the
-// subscription goes idle for drainIdleWindow. A Redis SetNX lock guards
-// against overlapping ticks if a session runs long.
+// every `interval`. The session ends early if the subscription goes idle for
+// drainIdleWindow. Sessions overlap by design: writes are idempotent ZADDs and
+// the windower takes the minimum watermark across instances.
 func ingestPull(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-
-	locked, err := rdb.SetNX(ctx, pullLockKey, "locked", pullLockTTL).Result()
-	if err != nil {
-		http.Error(w, "lock check failed", http.StatusInternalServerError)
-		log.Printf("[PullIngestor] lock check failed: %v", err)
-		return
-	}
-	if !locked {
-		log.Printf("[PullIngestor] previous tick still draining, skipping this tick")
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	// CRITICAL: We only delete the lock here if the normal flow didn't release it yet
-	lockReleased := false
-	defer func() {
-		if !lockReleased {
-			rdb.Del(context.Background(), pullLockKey)
-		}
-	}()
 
 	sessionCtx, cancelSession := context.WithTimeout(ctx, maxSessionDuration)
 	defer cancelSession()
@@ -276,8 +257,6 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 
 				lastTickTime.Store(time.Now())
 
-				rdb.Expire(sessionCtx, pullLockKey, pullLockTTL)
-
 				currentProcessed := atomic.SwapInt64(&processedSinceLastTick, 0)
 				currentFailed := atomic.SwapInt64(&failedSinceLastTick, 0)
 				currentStored := atomic.SwapInt64(&storedSinceLastTick, 0)
@@ -313,7 +292,7 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[PullIngestor] starting continuous message consumption with internal %v ticker", interval)
 
-	err = pullSub.Receive(receiveCtx, func(msgCtx context.Context, msg *pubsub.Message) {
+	err := pullSub.Receive(receiveCtx, func(msgCtx context.Context, msg *pubsub.Message) {
 		idleTimer.Reset(drainIdleWindow)
 
 		rec, ok, procErr := parseEvent(msg.Data)
@@ -333,26 +312,18 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 		batcher.add(batchItem{rec: rec, msg: msg})
 	})
 
+	if err != nil {
+		log.Printf("[PullIngestor] receive ended with error: %v", err)
+	}
+
 	atomic.StoreInt64(&isShuttingDown, 1)
 
 	idleTimer.Stop()
 	cancelReceive()
 
-	// Receive only returns once nothing is left to deliver, but any partial
-	// batches are still sitting in the batcher's buffer — flush and wait for
-	// them before releasing the lock and triggering the final windower call,
-	// so the next container instance's writes can't race unflushed data from
-	// this one for the same window.
+	// Partial batches are still sitting in the batcher's buffer — flush and
+	// wait for them before the final watermark, which must not promise past them.
 	batcher.close()
-
-	// Release the Redis lock early. Since the PubSub-Pulling
-	// has already terminated, this instance will not fetch any more data.
-	// Releasing `pullLockKey` now allows the next scheduled container instance
-	// to start working immediately without blockages.
-	// We explicitly set `lockReleased = true`. This prevents the
-	// top-level `defer` function from executing a second `rdb.Del`.
-	rdb.Del(context.Background(), pullLockKey)
-	lockReleased = true
 
 	lastTick := lastTickTime.Load().(time.Time)
 	timeSinceLastTick := time.Since(lastTick)
