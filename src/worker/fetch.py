@@ -1,6 +1,4 @@
-import json
 import os
-import json
 import threading
 import redis
 
@@ -72,12 +70,17 @@ def start_lease(data_source: str, query_name: str, window_id: str,
                 window_start: int, window_end: int) -> Lease:
     return Lease(data_source, _pending_member(query_name, window_id, window_start, window_end)).start()
 
-def fetch_window(window_start: int, window_end: int, data_source: str) -> list[dict]:
+def fetch_window(window_start: int, window_end: int, data_source: str) -> list[str]:
+    """The window's stored JSON payloads, left unparsed.
+
+    Decoding them here would build the dicts analytics no longer needs -- the
+    single largest allocation a worker used to make.
+    """
     r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
     key = f"{DATA_KEY_PREFIX}:{data_source}"
     members = r.zrangebyscore(key, window_start, window_end)
     print(f"[Fetch] Found {len(members)} member(s) in '{key}' for {window_start}-{window_end}", flush=True)
-    return [json.loads(m) for m in members]
+    return members
 
 def clear_pending(data_source: str, query_name: str, window_id: str,
                   window_start: int, window_end: int) -> None:

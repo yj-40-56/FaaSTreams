@@ -1,17 +1,26 @@
+import tempfile
+
 import duckdb
 
-def run(records: list[dict], query: str, source: dict) -> list[dict]:
-    columns = source["columns"]
-    required = [name for name, c in columns.items() if c.get("required")]
-    valid_records = [
-        r for r in records
-        if all(r.get(columns[f]["from_field"]) for f in required)
-    ]
-    if not valid_records:
-        print("No valid records with coordinates", flush=True)
-        return []
 
+def run(payloads: list[str], query: str, source: dict) -> list[dict]:
     conn = duckdb.connect()
+    try:
+        _load_spatial(conn)
+        _create_events(conn, payloads, source["columns"])
+
+        if conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0:
+            print("No valid records with coordinates", flush=True)
+            return []
+
+        _create_reference_tables(conn, source.get("reference_tables") or {})
+        return _run_query(conn, query)
+    finally:
+        print("Closing DuckDB connection.", flush=True)
+        conn.close()
+
+
+def _load_spatial(conn) -> None:
     try:
         conn.execute("SET extension_directory='/tmp'")
         print("Installing spatial extension...", flush=True)
@@ -20,27 +29,42 @@ def run(records: list[dict], query: str, source: dict) -> list[dict]:
     except Exception as e:
         print(f"Warning: Could not load spatial extension: {e}", flush=True)
 
-    col_defs = ", ".join(
-        f'"{name}" {c.get("type", "VARCHAR")}' for name, c in columns.items()
+
+def _create_events(conn, payloads: list[str], columns: dict) -> None:
+    """Build the events table straight from the stored JSON payloads.
+
+    Parsing in DuckDB rather than in Python is what keeps a full window inside
+    the worker's memory: materialising the same window as dicts and tuples
+    peaked at 2.7GB against a 4096Mi limit. read_json needs a file, and writing
+    one costs a fraction of what building those objects did.
+    """
+    fields = ", ".join(f"{_literal(c['from_field'])}: 'VARCHAR'" for c in columns.values())
+    projection = ", ".join(
+        f"CAST(NULLIF({_identifier(c['from_field'])}, '') AS {c.get('type', 'VARCHAR')})"
+        f" AS {_identifier(name)}"
+        for name, c in columns.items()
     )
-    conn.execute(f"CREATE TABLE events ({col_defs})")
+    # An empty string means absent, matching how the source CSV encodes a
+    # missing reading -- so a required field holding one is not a record.
+    required = " AND ".join(
+        f"NULLIF({_identifier(c['from_field'])}, '') IS NOT NULL"
+        for c in columns.values()
+        if c.get("required")
+    )
+    where = f" WHERE {required}" if required else ""
 
-    def cast(value, sql_type):
-        if value is None or value == "":
-            return None
-        return float(value) if sql_type == "DOUBLE" else str(value)
-
-    rows = [
-        tuple(
-            cast(r.get(c["from_field"]), c.get("type", "VARCHAR"))
-            for c in columns.values()
+    with tempfile.NamedTemporaryFile("w", suffix=".ndjson", dir="/tmp") as f:
+        f.write("\n".join(payloads))
+        f.flush()
+        conn.execute(
+            f"CREATE TABLE events AS SELECT {projection}"
+            f" FROM read_json({_literal(f.name)}, format='newline_delimited',"
+            f" columns={{{fields}}}){where}"
         )
-        for r in valid_records
-    ]
-    placeholders = ",".join([f"({', '.join(['?'] * len(columns))})"] * len(rows))
-    conn.execute(f"INSERT INTO events VALUES {placeholders}", [v for row in rows for v in row])
 
-    for ref_name, ref in source.get("reference_tables", {}).items():
+
+def _create_reference_tables(conn, reference_tables: dict) -> None:
+    for ref_name, ref in reference_tables.items():
         col_defs = ", ".join(f"{col} {typ}" for col, typ in ref["columns"].items())
         conn.execute(f"CREATE TABLE {ref_name} ({col_defs})")
         conn.executemany(
@@ -48,16 +72,23 @@ def run(records: list[dict], query: str, source: dict) -> list[dict]:
             [tuple(row[col] for col in ref["columns"]) for row in ref["rows"]],
         )
 
+
+def _run_query(conn, query: str) -> list[dict]:
     try:
         print(f"Executing query: {query}", flush=True)
         cursor = conn.execute(query)
-        columns = [desc[0] for desc in cursor.description]
-        results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        names = [desc[0] for desc in cursor.description]
+        return [dict(zip(names, row)) for row in cursor.fetchall()]
     except Exception as e:
         print(f"Error executing query: {e}", flush=True)
         raise
-    finally:
-        print("Closing DuckDB connection.", flush=True)
-        conn.close()
 
-    return results
+
+def _identifier(name: str) -> str:
+    escaped = name.replace('"', '""')
+    return f'"{escaped}"'
+
+
+def _literal(value: str) -> str:
+    escaped = value.replace("'", "''")
+    return f"'{escaped}'"
