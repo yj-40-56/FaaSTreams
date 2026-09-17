@@ -22,9 +22,24 @@ type sourceState struct {
 }
 
 type Sample struct {
-	At   int64
-	Late int64
-	Snap bool
+	At       int64
+	Late     int64
+	Snap     bool
+	Draining bool
+}
+
+// Conditions are what the ingestor observed about delivery itself, which the
+// in-flight set cannot show.
+type Conditions struct {
+	// Idle: nothing delivered for a while, so nothing is outstanding and the
+	// lateness allowance can be dropped.
+	Idle bool
+
+	// Draining: messages are arriving that were published long ago, so the
+	// subscription still holds a backlog. Pub/Sub delivers a backlog out of
+	// order, so anything still undelivered may be older than everything in
+	// flight -- the promise must not advance until delivery is fresh again.
+	Draining bool
 }
 
 func New() *Tracker {
@@ -76,9 +91,9 @@ func (s *sourceState) oldestInflight() (int64, bool) {
 	return oldest, oldest != 0
 }
 
-// Watermarks computes each source's watermark and records it as published. idle
-// means the subscription went quiet and flushed, so no allowance is needed.
-func (t *Tracker) Watermarks(idle bool) map[string]Sample {
+// Watermarks computes each source's watermark and records it as published,
+// under what the ingestor observed about delivery.
+func (t *Tracker) Watermarks(c Conditions) map[string]Sample {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -88,11 +103,13 @@ func (t *Tracker) Watermarks(idle bool) map[string]Sample {
 		var wm int64
 		snap := false
 		switch {
+		case c.Draining && s.published > 0:
+			wm = s.published
 		case inflight:
 			wm = oldest - AllowedLatenessSeconds
 		case s.maxWritten == 0:
 			continue
-		case idle:
+		case c.Idle:
 			wm = s.maxWritten
 			snap = true
 		default:
@@ -106,7 +123,7 @@ func (t *Tracker) Watermarks(idle bool) map[string]Sample {
 			continue
 		}
 		s.published = wm
-		out[name] = Sample{At: wm, Late: s.late, Snap: snap}
+		out[name] = Sample{At: wm, Late: s.late, Snap: snap, Draining: c.Draining}
 		s.late = 0
 	}
 	return out

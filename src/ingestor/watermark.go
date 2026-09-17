@@ -34,8 +34,8 @@ func newInstanceID() string {
 //
 // Own context, like writeBatcher.flush: a session's last publish fires as the
 // session deadline expires.
-func publishWatermarks(t *watermark.Tracker, idle bool) {
-	samples := t.Watermarks(idle)
+func publishWatermarks(t *watermark.Tracker, c watermark.Conditions) {
+	samples := t.Watermarks(c)
 	if len(samples) == 0 {
 		return
 	}
@@ -56,7 +56,7 @@ func publishWatermarks(t *watermark.Tracker, idle bool) {
 	}
 
 	for source, sample := range samples {
-		log.Printf("[Watermark] source=%s watermark=%d lag=%ds idle_snap=%t late_arrivals=%d",
-			source, sample.At, now-sample.At, sample.Snap, sample.Late)
+		log.Printf("[Watermark] source=%s watermark=%d lag=%ds idle_snap=%t draining=%t late_arrivals=%d",
+			source, sample.At, now-sample.At, sample.Snap, sample.Draining, sample.Late)
 	}
 }

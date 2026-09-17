@@ -21,8 +21,18 @@ const (
 	// Two scheduler jobs on alternate minutes each open one, so ticks never
 	// leave an unpulled stretch longer than a session start latency.
 	maxSessionDuration = 100 * time.Second
-	interval           = 5 * time.Second
-	maxDelay           = 1500 * time.Millisecond
+
+	// A message published this long ago proves the subscription still holds a
+	// backlog: at the publish rate, fresh delivery is sub-second.
+	backlogArrivalAge = 10 * time.Second
+
+	// How long delivery must stay fresh before the watermark may advance
+	// again. A backlog arrives interleaved with fresh messages, so one fresh
+	// moment is not evidence that the backlog is gone: measured, 2s still let
+	// 6,830 events through where 10s let none.
+	drainClearWindow = 10 * time.Second
+	interval         = 5 * time.Second
+	maxDelay         = 1500 * time.Millisecond
 
 	// how many messages can be outstanding at once — meaning delivered by the server to this client but not yet acked
 	pullMaxOutstandingMessages = 20000
@@ -212,9 +222,11 @@ func init() {
 // ingestPull is a Tick: it keeps a single Pub/Sub Receive session open for up
 // to maxSessionDuration, parsing and pipelining writes to Redis (via
 // writeBatcher) as messages arrive, while an internal ticker nudges windower
-// every `interval`. The session ends early if the subscription goes idle for
-// drainIdleWindow. Sessions overlap by design: writes are idempotent ZADDs and
-// the windower takes the minimum watermark across instances.
+// every `interval`. The session ends early once the subscription goes quiet, so
+// an idle pipeline costs nothing; the backlog that builds before the next tick
+// is safe because the watermark holds while old-published messages keep
+// arriving. Sessions overlap by design: writes are idempotent ZADDs and the
+// windower takes the minimum watermark across instances.
 func ingestPull(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -231,6 +243,14 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 	// Only an idle exit proves the subscription had nothing left to deliver,
 	// which is what makes the no-allowance snap below sound.
 	var idleExit int64
+
+	// Delivery age is the only local evidence of a backlog: event timestamps
+	// say nothing about what Pub/Sub has not handed over yet.
+	var lastBacklogArrivalAt atomic.Int64
+	draining := func() bool {
+		at := lastBacklogArrivalAt.Load()
+		return at != 0 && time.Since(time.Unix(0, at)) < drainClearWindow
+	}
 
 	batcher := newWriteBatcher(tracker, &processedSinceLastTick, &failedSinceLastTick, &storedSinceLastTick)
 
@@ -269,7 +289,7 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 				// in which case the last `interval` (5s) are not sufficient to determine whether the window should be triggered
 				log.Printf("[PullIngestor] processed %d messages, stored %d (deduped %d)",
 					currentProcessed, currentStored, currentProcessed-currentStored)
-				publishWatermarks(tracker, false)
+				publishWatermarks(tracker, watermark.Conditions{Draining: draining()})
 				triggerWindower()
 
 			case <-sessionCtx.Done():
@@ -278,11 +298,8 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// Idle Guardian
-	// creates a child context for message pulling.
-	// If the queue goes empty and no messages arrive within `drainIdleWindow`,
-	// it triggers a background Goroutine to call cancelReceive().
-	// This breaks pullSub.Receive immediately
+	log.Printf("[PullIngestor] starting continuous message consumption with internal %v ticker", interval)
+
 	receiveCtx, cancelReceive := context.WithCancel(sessionCtx)
 	idleTimer := time.AfterFunc(drainIdleWindow, func() {
 		log.Printf("[PullIngestor] %v of absolute silence (queue empty). Terminating", drainIdleWindow)
@@ -290,10 +307,11 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 		cancelReceive()
 	})
 
-	log.Printf("[PullIngestor] starting continuous message consumption with internal %v ticker", interval)
-
 	err := pullSub.Receive(receiveCtx, func(msgCtx context.Context, msg *pubsub.Message) {
 		idleTimer.Reset(drainIdleWindow)
+		if time.Since(msg.PublishTime) >= backlogArrivalAge {
+			lastBacklogArrivalAt.Store(time.Now().UnixNano())
+		}
 
 		rec, ok, procErr := parseEvent(msg.Data)
 		if procErr != nil {
@@ -312,7 +330,7 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 		batcher.add(batchItem{rec: rec, msg: msg})
 	})
 
-	if err != nil {
+	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		log.Printf("[PullIngestor] receive ended with error: %v", err)
 	}
 
@@ -351,7 +369,10 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[PullIngestor] processed %d messages, stored %d (deduped %d), session_elapsed=%s",
 		finalProcessed, finalStored, finalProcessed-finalStored, time.Since(sessionStart))
-	publishWatermarks(tracker, atomic.LoadInt64(&idleExit) == 1)
+	publishWatermarks(tracker, watermark.Conditions{
+		Idle:     atomic.LoadInt64(&idleExit) == 1,
+		Draining: draining(),
+	})
 	triggerWindower()
 
 	w.WriteHeader(http.StatusOK)
