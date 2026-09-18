@@ -121,23 +121,20 @@ correct first plan looks like and what to do if it wants to destroy something.
 
 ## Relationship to `main`
 
-This branch is `main` plus this directory. The only changes outside `terraform/`
-are the ones that directory needs in order to be usable, plus fixes for things
-that were already broken on `main`:
+This branch is `main` plus this directory. A small number of files outside
+`terraform/` differ, each supporting either the provisioning path or the local
+stack these modules are verified against:
 
 - the root `Makefile`, which only delegates to `terraform/Makefile`
 - one added section in the root `README.md`
-- a working local stack under `docker/`, which had not run since the coordinator
-  was split into `ingestor` + `windower`
-- `scripts/deploy-pinger.sh`, which on `main` deploys from `src/pinger`, a
-  directory that exists on neither branch
-- `scripts/deploy-ingestor-pull.sh` and `scripts/deploy-windower.sh`, which pass
-  `--clear-vpc-connector`; the modules here carry `ignore_changes` on the
-  connector precisely because live has none attached
-- `scripts/update-config.sh`, which on `main` calls a deleted script
-- one indentation fix in `env/query-config-reference.yaml`, where
-  `t-drive_data_v1` sat one level too deep and was silently dropped by the YAML
-  decoder, so `report_count_per_object` never ran
+- the local stack under `docker/`, aligned with the `ingestor` + `windower`
+  topology these modules deploy
+- `scripts/deploy-pinger.sh`, `scripts/deploy-ingestor-pull.sh`,
+  `scripts/deploy-windower.sh` and `scripts/update-config.sh`, aligned with the
+  current service layout and with the connector configuration these modules
+  assume (see the `ignore_changes` note under "Known first-plan diff")
+- `env/query-config-reference.yaml`, where the `t-drive_data_v1` source's
+  indentation was corrected so that both sources parse
 
 No application logic under `src/` differs from `main`.
 
