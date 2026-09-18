@@ -49,11 +49,9 @@ func seedWatermarks(ctx context.Context, t *watermark.Tracker) {
 	}
 }
 
-// publishWatermarks writes this instance's watermark per source. Redis rather
-// than the windower trigger's body, so a tick the ingestor did not cause sees it.
-//
-// Own context, like writeBatcher.flush: a session's last publish fires as the
-// session deadline expires.
+// Writes this instance's watermark per source. Redis rather than the trigger
+// body, so a tick the ingestor did not cause still sees it. Own context, like
+// writeBatcher.flush: the last publish fires as the session deadline expires.
 func publishWatermarks(t *watermark.Tracker, c watermark.Conditions) {
 	samples := t.Watermarks(c)
 	if len(samples) == 0 {

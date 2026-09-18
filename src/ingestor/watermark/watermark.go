@@ -35,10 +35,9 @@ type Conditions struct {
 	// lateness allowance can be dropped.
 	Idle bool
 
-	// Draining: messages are arriving that were published long ago, so the
-	// subscription still holds a backlog. Pub/Sub delivers a backlog out of
-	// order, so anything still undelivered may be older than everything in
-	// flight -- the promise must not advance until delivery is fresh again.
+	// Draining: long-published messages are still arriving, so a backlog
+	// remains. Pub/Sub delivers one out of order, so anything undelivered may
+	// predate everything in flight: hold the promise until delivery is fresh.
 	Draining bool
 }
 

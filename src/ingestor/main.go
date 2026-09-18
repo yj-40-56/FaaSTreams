@@ -70,10 +70,9 @@ type eventRecord struct {
 	z      redis.Z
 }
 
-// parseEvent validates a single event's raw published bytes and turns it into
-// the Redis write it should produce. ok=false (with a nil error) means the
-// message was malformed/unroutable and should be dropped (acked), not
-// retried; a non-nil error means a transient/schema failure worth retrying.
+// Turns raw published bytes into the Redis write they should produce.
+// ok=false with a nil error: malformed, drop it (ack). A non-nil error is
+// transient and worth retrying.
 func parseEvent(data []byte) (rec eventRecord, ok bool, err error) {
 	var fields map[string]interface{}
 	if err := json.Unmarshal(data, &fields); err != nil {
@@ -137,10 +136,8 @@ func parseEvent(data []byte) (rec eventRecord, ok bool, err error) {
 	}, true, nil
 }
 
-// processMessage parses a single event and writes it to Redis. Used by the
-// push entry point (ingestEvent), which handles one event per invocation so
-// there's nothing to batch. The pull entry point (ingestPull, pull.go) calls
-// parseEvent directly and pipelines the resulting writes instead.
+// For the push entry point (ingestEvent), one event per invocation with
+// nothing to batch. The pull path calls parseEvent directly and pipelines.
 func processMessage(ctx context.Context, data []byte) error {
 	rec, ok, err := parseEvent(data)
 	if err != nil {

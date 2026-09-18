@@ -37,18 +37,12 @@ const (
 	activeKey         = "active"
 )
 
-// Timing knobs.
-//
-// These are absolute, which only holds while the window size stays in the same
-// order of magnitude as they are. At a 60s window a 180s retry backstop is
-// three windows; at a 5s window it is thirty-six, and a window would sit
-// unprocessed far longer than it took to fill. Deriving them from
-// q.WindowSize is the obvious next step.
+// Timing knobs. Absolute, so they only hold while the window size stays in
+// their order of magnitude: a 180s backstop is three 60s windows but
+// thirty-six 5s ones. Deriving them from q.WindowSize is the next step.
 const (
-	// How long the windower waits on a worker before hanging up. The worker is
-	// synchronous and takes minutes, so this expiring is normal and says
-	// nothing about whether the window is being processed -- only the lease
-	// does. See retryPending.
+	// Expiring is normal: the worker is synchronous and takes minutes. Only
+	// the lease says whether a window is being processed. See retryPending.
 	workerTriggerTimeout = 30 * time.Second
 	// Guards one query's window advance, one source's retry sweep, and one
 	// session's rollup against an overlapping tick.
@@ -58,9 +52,8 @@ const (
 	lateBufferSeconds = 3
 	// Three missed 5s refreshes and the instance is treated as gone.
 	watermarkStaleAfterSeconds = 15
-	// Escape hatch: a stalled watermark holds its windows' events in Redis,
-	// ~2.6 MB/s at scale 24 against 1 GB, so this bounds memory as well as
-	// latency. Past it the clock decides again, loudly.
+	// Escape hatch. A stalled watermark pins its events in Redis, so this
+	// bounds memory as well as latency. Past it the clock decides, loudly.
 	watermarkMaxStallSeconds = 180
 	// Above watermarkMaxStallSeconds, so a stall record cannot expire mid-stall.
 	watermarkStallTTL = time.Hour
@@ -94,11 +87,10 @@ redis.call('ZADD', KEYS[1], ARGV[1], ARGV[2])
 return 1
 `)
 
-// cleanupBelowMin prunes events no window can still need. KEYS: window:next,
-// data, pending. The boundary is the earliest of the next window each query
-// will emit and the oldest window a worker has been handed but not yet
-// confirmed -- a window that was emitted and never confirmed still owns its
-// events, so it holds the boundary down until the worker clears it.
+// Prunes events no window can still need. KEYS: window:next, data, pending.
+// The boundary is the earlier of the next window each query will emit and the
+// oldest window handed out but unconfirmed -- an unconfirmed window still owns
+// its events, so it holds the boundary down until the worker clears it.
 var cleanupBelowMin = redis.NewScript(`
 local lo = redis.call('ZRANGE', KEYS[1], 0, 0, 'WITHSCORES')
 if lo[2] == nil then

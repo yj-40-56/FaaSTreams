@@ -12,12 +12,11 @@ import (
 	"cloud.google.com/go/pubsub"
 )
 
-// Playback is the whole simulator config, read from env vars only. The simulator
-// isn't deployed, so it doesn't touch the shared query config even where that
-// means duplicating a value (TimestampField, TimestampFormat).
+// The whole simulator config, from env vars only. It isn't deployed, so it
+// never touches the shared query config, even where that duplicates a value
+// (TimestampField, TimestampFormat).
 //
-// ScaleFactor compresses CSV event timestamps so data plays back faster than it was recorded.
-// Formula: scaleFactor = CSV duration / desired real duration
+// ScaleFactor = CSV duration / desired real duration.
 //
 // | CSV data | Real time | scaleFactor |
 // |----------|-----------|-------------|
