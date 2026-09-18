@@ -11,16 +11,28 @@ import (
 
 	"cloud.google.com/go/pubsub/v2"
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
+	"github.com/mardentub/ingestor/watermark"
 	"github.com/redis/go-redis/v9"
 )
 
 const (
-	pullLockKey        = "lock:ingestor:pull"
-	pullLockTTL        = 7 * time.Second
-	drainIdleWindow    = 2000 * time.Millisecond
-	maxSessionDuration = 50 * time.Second
-	interval           = 5 * time.Second
-	maxDelay           = 1500 * time.Millisecond
+	drainIdleWindow = 2000 * time.Millisecond
+
+	// Two scheduler jobs on alternate minutes each open one, so ticks never
+	// leave an unpulled stretch longer than a session start latency.
+	maxSessionDuration = 100 * time.Second
+
+	// A message published this long ago proves the subscription still holds a
+	// backlog: at the publish rate, fresh delivery is sub-second.
+	backlogArrivalAge = 10 * time.Second
+
+	// How long delivery must stay fresh before the watermark may advance
+	// again. A backlog arrives interleaved with fresh messages, so one fresh
+	// moment is not evidence that the backlog is gone: measured, 2s still let
+	// 6,830 events through where 10s let none.
+	drainClearWindow = 10 * time.Second
+	interval         = 5 * time.Second
+	maxDelay         = 1500 * time.Millisecond
 
 	// how many messages can be outstanding at once — meaning delivered by the server to this client but not yet acked
 	pullMaxOutstandingMessages = 20000
@@ -41,6 +53,9 @@ const (
 var (
 	pullSub     *pubsub.Subscriber
 	windowerURL string
+
+	// Instance-scoped: the watermark must not move backwards between sessions.
+	tracker = watermark.New()
 )
 
 // batchItem pairs a parsed Redis write with the pubsub message it came from,
@@ -59,16 +74,23 @@ type batchItem struct {
 type writeBatcher struct {
 	items     chan batchItem
 	done      chan struct{}
+	tracker   *watermark.Tracker
 	processed *int64
 	failed    *int64
+
+	// Members actually added, summed from the ZADD replies. Diverges from
+	// processed when duplicate payloads collapse.
+	stored *int64
 }
 
-func newWriteBatcher(processed, failed *int64) *writeBatcher {
+func newWriteBatcher(tracker *watermark.Tracker, processed, failed, stored *int64) *writeBatcher {
 	b := &writeBatcher{
 		items:     make(chan batchItem, pipelineChannelBuffer),
 		done:      make(chan struct{}),
+		tracker:   tracker,
 		processed: processed,
 		failed:    failed,
+		stored:    stored,
 	}
 	go b.run()
 	return b
@@ -154,7 +176,12 @@ func (b *writeBatcher) flush(batch []batchItem) {
 
 	for key, items := range groups {
 		err := cmds[key].Err()
+		if err == nil {
+			atomic.AddInt64(b.stored, cmds[key].Val())
+		}
 		for _, it := range items {
+			// Before the ack: in flight ends when the write resolves, not sooner.
+			b.tracker.Done(it.rec.source, it.rec.ts, err == nil)
 			if err != nil {
 				log.Printf("[PullIngestor] nacking message: redis zadd failed: %v", err)
 				it.msg.Nack()
@@ -195,31 +222,13 @@ func init() {
 // ingestPull is a Tick: it keeps a single Pub/Sub Receive session open for up
 // to maxSessionDuration, parsing and pipelining writes to Redis (via
 // writeBatcher) as messages arrive, while an internal ticker nudges windower
-// and renews the Redis lock every `interval`. The session ends early if the
-// subscription goes idle for drainIdleWindow. A Redis SetNX lock guards
-// against overlapping ticks if a session runs long.
+// every `interval`. The session ends early once the subscription goes quiet, so
+// an idle pipeline costs nothing; the backlog that builds before the next tick
+// is safe because the watermark holds while old-published messages keep
+// arriving. Sessions overlap by design: writes are idempotent ZADDs and the
+// windower takes the minimum watermark across instances.
 func ingestPull(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-
-	locked, err := rdb.SetNX(ctx, pullLockKey, "locked", pullLockTTL).Result()
-	if err != nil {
-		http.Error(w, "lock check failed", http.StatusInternalServerError)
-		log.Printf("[PullIngestor] lock check failed: %v", err)
-		return
-	}
-	if !locked {
-		log.Printf("[PullIngestor] previous tick still draining, skipping this tick")
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	// CRITICAL: We only delete the lock here if the normal flow didn't release it yet
-	lockReleased := false
-	defer func() {
-		if !lockReleased {
-			rdb.Del(context.Background(), pullLockKey)
-		}
-	}()
 
 	sessionCtx, cancelSession := context.WithTimeout(ctx, maxSessionDuration)
 	defer cancelSession()
@@ -229,9 +238,21 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 	// `isShuttingDown` acts as a thread-safe coordination barrier (0 = active, 1 = stopping).
 	// It ensures the background ticker goroutine completely halts its triggers once the
 	// SubPub-Pulling terminates
-	var processedSinceLastTick, failedSinceLastTick, isShuttingDown int64
+	var processedSinceLastTick, failedSinceLastTick, storedSinceLastTick, isShuttingDown int64
 
-	batcher := newWriteBatcher(&processedSinceLastTick, &failedSinceLastTick)
+	// Only an idle exit proves the subscription had nothing left to deliver,
+	// which is what makes the no-allowance snap below sound.
+	var idleExit int64
+
+	// Delivery age is the only local evidence of a backlog: event timestamps
+	// say nothing about what Pub/Sub has not handed over yet.
+	var lastBacklogArrivalAt atomic.Int64
+	draining := func() bool {
+		at := lastBacklogArrivalAt.Load()
+		return at != 0 && time.Since(time.Unix(0, at)) < drainClearWindow
+	}
+
+	batcher := newWriteBatcher(tracker, &processedSinceLastTick, &failedSinceLastTick, &storedSinceLastTick)
 
 	// to ensure that the last Windower trigger strictly adheres to the interval of `interval` (5s) seconds
 	var lastTickTime atomic.Value
@@ -256,10 +277,9 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 
 				lastTickTime.Store(time.Now())
 
-				rdb.Expire(sessionCtx, pullLockKey, pullLockTTL)
-
 				currentProcessed := atomic.SwapInt64(&processedSinceLastTick, 0)
 				currentFailed := atomic.SwapInt64(&failedSinceLastTick, 0)
+				currentStored := atomic.SwapInt64(&storedSinceLastTick, 0)
 
 				if currentFailed > 0 {
 					log.Printf("[PullIngestor] %d messages failed", currentFailed)
@@ -267,7 +287,9 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 
 				// There could be cases where a window is 2xinterval (10s) long,
 				// in which case the last `interval` (5s) are not sufficient to determine whether the window should be triggered
-				log.Printf("[PullIngestor] processed %d messages", currentProcessed)
+				log.Printf("[PullIngestor] processed %d messages, stored %d (deduped %d)",
+					currentProcessed, currentStored, currentProcessed-currentStored)
+				publishWatermarks(tracker, watermark.Conditions{Draining: draining()})
 				triggerWindower()
 
 			case <-sessionCtx.Done():
@@ -276,21 +298,20 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// Idle Guardian
-	// creates a child context for message pulling.
-	// If the queue goes empty and no messages arrive within `drainIdleWindow`,
-	// it triggers a background Goroutine to call cancelReceive().
-	// This breaks pullSub.Receive immediately
+	log.Printf("[PullIngestor] starting continuous message consumption with internal %v ticker", interval)
+
 	receiveCtx, cancelReceive := context.WithCancel(sessionCtx)
 	idleTimer := time.AfterFunc(drainIdleWindow, func() {
 		log.Printf("[PullIngestor] %v of absolute silence (queue empty). Terminating", drainIdleWindow)
+		atomic.StoreInt64(&idleExit, 1)
 		cancelReceive()
 	})
 
-	log.Printf("[PullIngestor] starting continuous message consumption with internal %v ticker", interval)
-
-	err = pullSub.Receive(receiveCtx, func(msgCtx context.Context, msg *pubsub.Message) {
+	err := pullSub.Receive(receiveCtx, func(msgCtx context.Context, msg *pubsub.Message) {
 		idleTimer.Reset(drainIdleWindow)
+		if time.Since(msg.PublishTime) >= backlogArrivalAge {
+			lastBacklogArrivalAt.Store(time.Now().UnixNano())
+		}
 
 		rec, ok, procErr := parseEvent(msg.Data)
 		if procErr != nil {
@@ -305,29 +326,22 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 			atomic.AddInt64(&processedSinceLastTick, 1)
 			return
 		}
+		tracker.Begin(rec.source, rec.ts)
 		batcher.add(batchItem{rec: rec, msg: msg})
 	})
+
+	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		log.Printf("[PullIngestor] receive ended with error: %v", err)
+	}
 
 	atomic.StoreInt64(&isShuttingDown, 1)
 
 	idleTimer.Stop()
 	cancelReceive()
 
-	// Receive only returns once nothing is left to deliver, but any partial
-	// batches are still sitting in the batcher's buffer — flush and wait for
-	// them before releasing the lock and triggering the final windower call,
-	// so the next container instance's writes can't race unflushed data from
-	// this one for the same window.
+	// Partial batches are still sitting in the batcher's buffer — flush and
+	// wait for them before the final watermark, which must not promise past them.
 	batcher.close()
-
-	// Release the Redis lock early. Since the PubSub-Pulling
-	// has already terminated, this instance will not fetch any more data.
-	// Releasing `pullLockKey` now allows the next scheduled container instance
-	// to start working immediately without blockages.
-	// We explicitly set `lockReleased = true`. This prevents the
-	// top-level `defer` function from executing a second `rdb.Del`.
-	rdb.Del(context.Background(), pullLockKey)
-	lockReleased = true
 
 	lastTick := lastTickTime.Load().(time.Time)
 	timeSinceLastTick := time.Since(lastTick)
@@ -351,8 +365,14 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 	}
 
 	finalProcessed := atomic.SwapInt64(&processedSinceLastTick, 0)
+	finalStored := atomic.SwapInt64(&storedSinceLastTick, 0)
 
-	log.Printf("[PullIngestor] processed %d messages, session_elapsed=%s", finalProcessed, time.Since(sessionStart))
+	log.Printf("[PullIngestor] processed %d messages, stored %d (deduped %d), session_elapsed=%s",
+		finalProcessed, finalStored, finalProcessed-finalStored, time.Since(sessionStart))
+	publishWatermarks(tracker, watermark.Conditions{
+		Idle:     atomic.LoadInt64(&idleExit) == 1,
+		Draining: draining(),
+	})
 	triggerWindower()
 
 	w.WriteHeader(http.StatusOK)
