@@ -9,7 +9,7 @@ def windower_sub_1_trigger(request):
     project_id = os.getenv("GCP_PROJECT")
     project_region = os.getenv("GCP_REGION")
     queue_id = os.getenv("TASKS_QUEUE")
-    windower_url = os.getenv("WINDOWER_URL")
+    ingestor_url = os.getenv("INGESTOR_URL")
 
     client = tasks_v2.CloudTasksClient()
     queue_path = client.queue_path(project_id, project_region, queue_id)
@@ -26,7 +26,7 @@ def windower_sub_1_trigger(request):
         task = {
             "http_request": {
                 "http_method": tasks_v2.HttpMethod.POST,
-                "url": windower_url,
+                "url": ingestor_url,
                 "headers": {"Content-Type": "application/json"},
                 "body": json.dumps({"step": i, "delay": delay}).encode("utf-8")
             },
