@@ -82,10 +82,39 @@ docker compose -f docker/docker-compose.dev.yml up --build
 
 When using this setup, ensure that the data folder contains a .csv with its header (column names).
 
+The stack mirrors the deployed topology in `terraform/main.tf`. Every application
+container runs the same source and the same entry point Terraform deploys, with
+`FUNCTION_TARGET` set to the module's `build_config.entry_point`. Managed services
+are substituted only where they have to be: the Pub/Sub emulator for Pub/Sub,
+fake-gcs-server for the query-config bucket, a curl loop for Cloud Scheduler, and
+plain Redis for Memorystore.
+
+Cloud Tasks and the pinger are deliberately not modelled. `IngestPull` paces the
+windower from inside its own session, so the pinger is a redundant second trigger
+path that exists only in the cloud.
+
+Service endpoints, once up:
+
+| Service    | Local URL               |
+|------------|-------------------------|
+| worker     | `http://localhost:8080` |
+| ingestor   | `http://localhost:8081` |
+| windower   | `http://localhost:8082` |
+| data-sink  | `http://localhost:8083` |
+
+Results land in the `analytics-results` sorted set in Redis:
+
+```bash
+docker compose -f docker/docker-compose.dev.yml exec redis redis-cli zrange analytics-results 0 -1
+```
+
+Note that the bundled simulator publishes `ais_data_v1` only, so the queries bound
+to `t-drive_data_v1` and to `generic` log empty windows on every tick.
+
 To delete the setup run:
 
 ```bash
-docker compose -f docker/docker-compose.dev.yml down
+docker compose -f docker/docker-compose.dev.yml down -v
 ```
 
 ## E2E Example - Google Cloud

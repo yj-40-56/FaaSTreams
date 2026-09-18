@@ -31,18 +31,18 @@ sources:
             geom_wkt:     "POINT(10.7 58.2)"
             threshold_nm: 5.0
 
-    t-drive_data_v1:
-      description: "T-Drive dataset: taxis in Beijing"
-      id_field: "taxi_id"
-      timestamp_field: "timestamp"
-      timestamp_format: "2006-01-02 15:04:05"
-      lat_field: "latitude"
-      lon_field: "longitude"
-      columns:
-        taxi_id:   { from_field: "taxi_id",   type: VARCHAR }
-        latitude:  { from_field: "latitude",  type: DOUBLE, required: true }
-        longitude: { from_field: "longitude", type: DOUBLE, required: true }
-        timestamp: { from_field: "timestamp", type: VARCHAR }
+  t-drive_data_v1:
+    description: "T-Drive dataset: taxis in Beijing"
+    id_field: "taxi_id"
+    timestamp_field: "timestamp"
+    timestamp_format: "2006-01-02 15:04:05"
+    lat_field: "latitude"
+    lon_field: "longitude"
+    columns:
+      taxi_id:   { from_field: "taxi_id",   type: VARCHAR }
+      latitude:  { from_field: "latitude",  type: DOUBLE, required: true }
+      longitude: { from_field: "longitude", type: DOUBLE, required: true }
+      timestamp: { from_field: "timestamp", type: VARCHAR }
 
 
 queries:
