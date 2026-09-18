@@ -68,15 +68,15 @@ docker compose -f docker/docker-compose.dev.yml down
 
 The pipeline runs as four independently deployed Cloud Functions (gen2): `ingestor`, `windower`, `worker` and `data-sink`. Data flows `simulator → Pub/Sub → ingestor → Redis → windower → worker → data-sink`.
 
-See `scripts/deploy-ingestor.sh`, `scripts/deploy-windower.sh`, `scripts/deploy-worker.sh`, and `scripts/deploy-data-sink.sh` for the exact `gcloud functions deploy` invocations.
+See `scripts/deploy-ingestor-pull.sh`, `scripts/deploy-windower.sh`, `scripts/deploy-worker.sh`, and `scripts/deploy-data-sink.sh` for the exact `gcloud functions deploy` invocations. `scripts/deploy-ingestor.sh` deploys the retired push ingestor and is kept for reference only.
 
 ```bash
-# ingestor - triggered by messages on the Pub/Sub topic
-gcloud functions deploy ingestor --gen2 --runtime go126 --region europe-west3 \
-  --memory 2048Mi --cpu 2 --source src/ingestor --entry-point IngestEvent \
-  --trigger-topic ais-stream --network default \
+# ingestor-pull - HTTP-triggered by Cloud Scheduler, drains a pull subscription
+gcloud functions deploy ingestor-pull --gen2 --runtime go126 --region europe-west3 \
+  --memory 2048Mi --cpu 2 --source src/ingestor --entry-point IngestPull \
+  --trigger-http --allow-unauthenticated --network default \
   --subnet projects/faastreams/regions/europe-west3/subnetworks/default \
-  --env-vars-file env/gcloud-env-ingestor.yaml --max-instances 6 --concurrency 20
+  --env-vars-file env/gcloud-env-ingestor-pull.yaml --max-instances 4 --concurrency 1
 
 # windower - HTTP-triggered, invoked to process pending windows
 gcloud functions deploy windower --gen2 --runtime go126 --region europe-west3 \
@@ -100,29 +100,33 @@ gcloud functions deploy data-sink --gen2 --runtime python312 --region europe-wes
   --env-vars-file env/gcloud-env-data-sink.yaml
 ```
 
-Then run the simulator (from `src/simulator`) to publish mock AIS data to the Pub/Sub topic the ingestor is subscribed to:
+Then run the simulator to publish mock AIS data to the topic the pull subscription reads:
 
 ```bash
-PUBSUB_PROJECT_ID=faastreams PUBSUB_TOPIC_ID=ais-stream CONFIG_BUCKET=faastreams-config \
-  CONFIG_OBJECT=query-config.yaml SOURCE_NAME=ais_data_v1 go run .
+cd scripts && bash run-simulator.sh
 ```
 
-## Experimental: Pull-Based Ingestion
+It is configured by env vars in that script, not by the query config. `SIM_SCALE_FACTOR` is CSV duration over desired real duration, and `SIM_RUNTIME` caps the run in real time. The ingestor must already be pulling when it starts: a paused Scheduler job means nothing drains the subscription, and Pub/Sub delivers the resulting backlog out of order.
 
-`ingestor-pull` (`src/ingestor/pull.go`, entry point `IngestPull`) is an alternate `ingestor` implementation being evaluated as a fix for push-ingestion backlog under load (see [[ingestor-throughput-capacity]] in project memory). Instead of one invocation per Pub/Sub message, it's HTTP-triggered by Cloud Scheduler on a fixed interval; each invocation (a **Tick**) drains a pull subscription until idle, writes everything to the same `data:<source>` Redis keys the push ingestor uses, then calls windower's `ProcessWindows` directly (fire-and-forget) instead of relying on windower's own schedule. See `CONTEXT.md` for the Push/Pull Ingestor, Tick, and Drain terminology.
+## Pull-Based Ingestion
 
-This is a parallel experiment, not a replacement: the push and pull ingestors are never deployed at the same time, and are compared sequentially (A/B), since both write into the same Redis keys and a topic fans out to every subscription independently.
+`ingestor-pull` (`src/ingestor/pull.go`, entry point `IngestPull`) is the only ingestor deployed. Rather than one invocation per Pub/Sub message, it is HTTP-triggered by Cloud Scheduler on a fixed interval. Each invocation keeps a Receive session open for up to `maxSessionDuration`, writes what it drains into `data:<source>`, and nudges windower's `ProcessWindows` directly (fire-and-forget) every `interval`.
 
-To run a pull-ingestor test:
+Terminology: a **Tick** is one Scheduler-triggered invocation; a **Drain** is the repeated pulling inside it, bounded by the session deadline and ended early once the subscription goes quiet.
+
+Sessions overlap by design. A Scheduler job will not start a run while its own previous attempt is open, so one job holds a session roughly `maxSessionDuration / 120s` of the time; several jobs on staggered schedules are what keep the subscription continuously pulled. Overlap is safe because the writes are idempotent `ZADD`s and the windower takes the minimum watermark across live instances.
+
+The subscription is created separately, since a topic fans out to every subscription independently:
 
 ```bash
 bash scripts/create-pull-subscription.sh   # creates ais-stream-pull fresh
-gcloud functions delete ingestor --region europe-west3 --quiet   # push ingestor must not be live
 bash scripts/deploy-ingestor-pull.sh
-# point Cloud Scheduler's job at ingestor-pull's URL instead of windower's for the duration of the test
+# then point a Cloud Scheduler job at ingestor-pull's URL
 ```
 
-Afterwards, redeploy the push ingestor (`scripts/deploy-ingestor.sh`), point Scheduler back at windower, and run `scripts/delete-pull-subscription.sh` so `ais-stream-pull` doesn't linger and accumulate backlog between runs.
+`scripts/delete-pull-subscription.sh` removes it again so it does not accumulate backlog between runs.
+
+The push ingestor (`IngestEvent` in `src/ingestor/main.go`) is retired but still compiles; it fell behind under load, where per-message invocation overhead dominated. The two were never deployed at the same time. Its entry point is left in place because `init()` runs for every entry point built from this source directory, so removing it is a separate change.
 
 ## Query Config
 
