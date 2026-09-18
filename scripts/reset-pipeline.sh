@@ -25,6 +25,7 @@ gcloud compute ssh redis-bastion --zone europe-west3-a --command "
     data:ais_data_v1 \
     analytics-results \
     window:next:ais_data_v1 \
+    watermark:ais_data_v1 \
     lock:ais_data_v1:hazard_zones_proximity_alerts
 "
 

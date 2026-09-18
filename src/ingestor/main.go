@@ -64,8 +64,10 @@ func ingestEvent(ctx context.Context, e event.Event) error {
 // eventRecord is the Redis write derived from a single parsed event: which
 // sorted set it belongs to, and the ZADD member/score to write into it.
 type eventRecord struct {
-	key string
-	z   redis.Z
+	key    string
+	source string
+	ts     int64
+	z      redis.Z
 }
 
 // parseEvent validates a single event's raw published bytes and turns it into
@@ -125,7 +127,9 @@ func parseEvent(data []byte) (rec eventRecord, ok bool, err error) {
 	*/
 
 	return eventRecord{
-		key: dataKey + ":" + sourceName,
+		key:    dataKey + ":" + sourceName,
+		source: sourceName,
+		ts:     t.Unix(),
 		z: redis.Z{
 			Score:  float64(t.Unix()),
 			Member: string(data),
