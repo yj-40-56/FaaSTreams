@@ -14,6 +14,10 @@ import (
 const (
 	watermarkKey = "watermark"
 
+	// The windower's monotonic record of how far it has already closed windows.
+	// Read-only here: the ingestor adopts it, the windower owns it.
+	watermarkFloorKey = "watermark:floor"
+
 	// Only bounds key lifetime; the windower judges freshness by published_at.
 	watermarkHashTTL = 10 * time.Minute
 )
@@ -27,6 +31,22 @@ func newInstanceID() string {
 		return fmt.Sprintf("t%d", time.Now().UnixNano())
 	}
 	return hex.EncodeToString(b[:])
+}
+
+// Hands a cold start the floor the windower already acted on, so its first
+// sample holds instead of promising from a partial view. Without it, session
+// churn under a backlog walks the watermark past undelivered events.
+//
+// Best effort: a missing floor is the normal first-run case.
+func seedWatermarks(ctx context.Context, t *watermark.Tracker) {
+	for source := range appConfig.Sources {
+		floor, err := rdb.Get(ctx, watermarkFloorKey+":"+source).Int64()
+		if err != nil {
+			continue
+		}
+		t.Seed(source, floor)
+		log.Printf("[Watermark] source=%s seeded from floor=%d", source, floor)
+	}
 }
 
 // publishWatermarks writes this instance's watermark per source. Redis rather

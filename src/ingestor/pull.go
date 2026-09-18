@@ -235,6 +235,10 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 
 	sessionStart := time.Now()
 
+	// Stops a cold start promising past an undelivered backlog. No-op when
+	// warm: Seed only raises.
+	seedWatermarks(sessionCtx, tracker)
+
 	// `isShuttingDown` acts as a thread-safe coordination barrier (0 = active, 1 = stopping).
 	// It ensures the background ticker goroutine completely halts its triggers once the
 	// SubPub-Pulling terminates

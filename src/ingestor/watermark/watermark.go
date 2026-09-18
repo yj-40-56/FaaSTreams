@@ -55,6 +55,18 @@ func (t *Tracker) source(name string) *sourceState {
 	return s
 }
 
+// Adopts a promise made before this instance existed. Without it a cold start
+// has published == 0, so the Draining hold cannot engage and the instance
+// promises from the few messages it drained -- ahead of what is undelivered.
+func (t *Tracker) Seed(source string, ts int64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	s := t.source(source)
+	if ts > s.published {
+		s.published = ts
+	}
+}
+
 func (t *Tracker) Begin(source string, ts int64) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
