@@ -29,6 +29,118 @@ missing (404) and want to recreate it under the old name — check Cloud Audit L
 (`protoPayload.methodName` on `resource.type="cloud_function"`) before assuming
 it's actually gone, the way this one wasn't.
 
+## Verification status
+
+**This configuration has never been applied to Google Cloud.** The `faastreams`
+project's billing account has been closed since 2026-09-11, so every Google API
+call returns `BILLING_DISABLED`. That blocks `plan`, `apply` and `import` equally,
+and it means the live resources cannot be read back to confirm that the values in
+this directory match what is actually deployed.
+
+What *has* been verified, and how:
+
+| Check | Result |
+|---|---|
+| `terraform validate` | passes |
+| `terraform fmt -check -recursive` | clean |
+| Environment contract across all seven modules | every variable a module sets matches the name the service source actually reads |
+| Local end-to-end pipeline | runs; 10,000 events ingested through to stored results |
+
+The environment-contract check is the strongest evidence here short of an apply.
+Each module's `environment_variables` block was compared against the `os.Getenv` /
+`os.Environ` calls in the source it deploys, so a rename on either side would show
+up. The local pipeline then exercises the same services, same entry points and
+same Redis key layout that these modules configure.
+
+What has **not** been verified, and can only be closed by a real apply:
+
+- **API enablement.** This config declares no `google_project_service` resources.
+  A fresh project needs Cloud Run, Cloud Functions, Memorystore Redis, Serverless
+  VPC Access, Pub/Sub, Cloud Tasks, Cloud Scheduler, Cloud Build, Artifact
+  Registry and Cloud Storage enabled by hand first, or the first apply fails one
+  service at a time.
+- **The query-config bucket.** `var.query_config_bucket` defaults to
+  `faastreams-config`, but nothing here creates it — only the functions-source
+  bucket is created. It must already exist, holding `query-config.yaml`, or the
+  ingestor and windower will deploy and then exit on startup.
+- **The state backend.** `provider.tf` hardcodes
+  `gs://faastreams-terraform-state`, which lives in the same blocked project.
+  Targeting a different project needs `terraform init -backend-config=...`, or a
+  local backend for a throwaway run.
+- **Importing the live resources.** Nothing has been imported yet. See
+  "First-time setup" below; applying before importing will try to create
+  duplicates.
+- **Quota, IAM, and the VPC connector attachment**, none of which `validate` can
+  see. The connector in particular broke `ingestor-pull` and `windower` in
+  production on 2026-08-19 and had to be undone by hand.
+
+Treat a green `validate` as "the configuration is internally coherent", not as
+"this will apply cleanly".
+
+## How to run everything
+
+Two paths. Only the first one works today.
+
+### Locally — works now, no Google Cloud account required
+
+```bash
+docker compose -f docker/docker-compose.dev.yml up --build
+```
+
+This runs the full pipeline against emulators: the Pub/Sub emulator, a
+fake-gcs-server holding the query config, plain Redis in place of Memorystore, and
+a curl loop in place of Cloud Scheduler. Every application container runs the same
+source and the same entry point these Terraform modules deploy. Results land in
+the `analytics-results` sorted set:
+
+```bash
+docker compose -f docker/docker-compose.dev.yml exec redis redis-cli zrange analytics-results 0 -1
+```
+
+The root `README.md` has the full detail, including the service port map. Tear it
+down with `docker compose -f docker/docker-compose.dev.yml down -v`.
+
+### On Google Cloud — blocked on billing
+
+In order, once billing is restored on a project:
+
+1. Confirm billing is live: `gcloud beta billing projects describe faastreams`
+   should report `billingEnabled: true`.
+2. Enable the ten APIs listed under "Verification status" above.
+3. Create the query-config bucket and upload the config, if targeting a project
+   that does not already have it.
+4. Find the real Redis instance ID and set `redis_instance_name` in
+   `environments/live.tfvars`. There is deliberately no default.
+5. `make init` then `make import-live`, to adopt the already-deployed resources
+   into state.
+6. `make plan ENV=live`, and read it. It must show only additions.
+7. `make apply ENV=live`.
+
+Steps 4 through 7 are expanded in "First-time setup" below, including what a
+correct first plan looks like and what to do if it wants to destroy something.
+
+## Relationship to `main`
+
+This branch is `main` plus this directory. The only changes outside `terraform/`
+are the ones that directory needs in order to be usable, plus fixes for things
+that were already broken on `main`:
+
+- the root `Makefile`, which only delegates to `terraform/Makefile`
+- one added section in the root `README.md`
+- a working local stack under `docker/`, which had not run since the coordinator
+  was split into `ingestor` + `windower`
+- `scripts/deploy-pinger.sh`, which on `main` deploys from `src/pinger`, a
+  directory that exists on neither branch
+- `scripts/deploy-ingestor-pull.sh` and `scripts/deploy-windower.sh`, which pass
+  `--clear-vpc-connector`; the modules here carry `ignore_changes` on the
+  connector precisely because live has none attached
+- `scripts/update-config.sh`, which on `main` calls a deleted script
+- one indentation fix in `env/query-config-reference.yaml`, where
+  `t-drive_data_v1` sat one level too deep and was silently dropped by the YAML
+  decoder, so `report_count_per_object` never ran
+
+No application logic under `src/` differs from `main`.
+
 ## Shared infrastructure: Redis and the VPC connector
 
 Redis and the VPC connector (`terraform/shared_infra.tf`) are **singletons** — one

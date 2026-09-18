@@ -29,6 +29,12 @@ into Terraform state before the first apply. See `terraform/README.md` for that
 procedure and for the known caveats, in particular the VPC connector attachment.
 `terraform/Makefile` has the full target set and is directly runnable on its own.
 
+**This configuration has not been applied to Google Cloud.** The project's billing
+account has been closed since 2026-09-11, so `plan`, `apply` and `import` all fail
+with `BILLING_DISABLED`. `terraform/README.md` has a Verification status section
+setting out exactly what was and was not checked. The local stack below runs the
+same services and needs no Google Cloud account.
+
 Everything else in this README describes the system itself and is unchanged by the
 presence of Terraform. The `scripts/` deploy commands remain the alternative path.
 
