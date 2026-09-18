@@ -31,7 +31,7 @@ purge-env:
 
 # google_cloud_scheduler_job has no pause/enabled field in the provider — pausing is
 # an imperative gcloud action, not something `terraform apply` can express.
-# scheduler-pause pauses both live jobs unconditionally (clean state before a benchmark run).
+# scheduler-pause pauses both live jobs unconditionally (clean state before an apply).
 scheduler-pause:
 	gcloud scheduler jobs pause coordinator-5sec-trigger --location=europe-west3 --project=faastreams 2>/dev/null || true
 	gcloud scheduler jobs pause windower-tick --location=europe-west3 --project=faastreams 2>/dev/null || true
@@ -57,7 +57,7 @@ plan:
 	$(TF) workspace select -or-create $(ENV)
 	$(TF) plan -var-file="environments/$(ENV).tfvars"
 
-# Drift check for `make benchmark`: fails (exit 2 from terraform, non-zero here) if
+# Drift check: fails (exit 2 from terraform, non-zero here) if
 # applied infra differs from what's declared. Does not print full plan output.
 plan-check:
 	$(TF) workspace select -or-create $(ENV)

@@ -1,9 +1,8 @@
 # FaaSTreams Terraform
 
 **Scope: infrastructure only.** Terraform stands up everything the pipeline runs
-on; it does not run benchmarks. Benchmark orchestration lives in the repo-root
-`Makefile` and `scripts/` (`make benchmark`, `scripts/save-results.py`) and is
-deliberately kept out of this directory.
+on. Benchmark orchestration is deliberately kept out of this directory and is not
+part of this branch.
 
 What it manages:
 
@@ -158,18 +157,10 @@ make -C terraform scheduler-resume   # resumes only coordinator-5sec-trigger by 
 ```
 
 `windower-tick` (which targets `ingestor-pull`) is paused live today; `scheduler-resume`
-deliberately does not re-enable it, since that's an operational decision, not a side
-effect of running a benchmark. `make benchmark` (repo root) uses `scheduler-pause`/
-`-resume` around each run automatically, and triggers `ingestor-pull` directly via
-HTTP instead of relying on `windower-tick`.
+deliberately does not re-enable it, since that's an operational decision rather than
+something a routine run should flip back on.
 
-## Saving benchmark results
-
-Moved out of this directory — it is benchmark tooling, not infrastructure:
-
-```bash
-make save-results ENV=live      # from the repo root; writes results/{env}_{timestamp}.json
-```
+## Inspecting results
 
 For ad hoc log inspection:
 
@@ -213,7 +204,7 @@ fully separate, `-<name>`-suffixed set of resources that never touches live.
 
 | Command | Description |
 |---------|-------------|
-| `make -C terraform plan-check ENV=live` | `terraform plan -detailed-exitcode`, used by `make benchmark`'s drift guard |
+| `make -C terraform plan-check ENV=live` | `terraform plan -detailed-exitcode`; non-zero exit signals drift |
 | `make -C terraform purge-env ENV=<name>` | Delete orphaned GCP resources for a non-live sandbox env not in Terraform state |
 | `make -C terraform destroy ENV=<name>` | Destroy an environment's resources. No root-level wrapper exists for this — deliberately, since `ENV` defaults to `live`. Redis and the VPC connector survive it (`prevent_destroy`). |
 | `make -C terraform import-redis` | Adopt the existing Memorystore instance into state. Needs `redis_instance_name` set first; refuses to guess. |
