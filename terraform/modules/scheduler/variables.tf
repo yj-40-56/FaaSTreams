@@ -1,7 +1,3 @@
-variable "name_suffix" {
-  type = string
-}
-
 variable "project_id" {
   type = string
 }
@@ -10,8 +6,8 @@ variable "region" {
   type = string
 }
 
-variable "pinger_url" {
-  type = string
+variable "schedules" {
+  type = map(string)
 }
 
 variable "ingestor_pull_url" {
