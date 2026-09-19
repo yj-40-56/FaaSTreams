@@ -4,6 +4,7 @@ package config
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -19,10 +20,20 @@ type Query struct {
 	DataSource  string `yaml:"data_source"`
 	WindowType  string `yaml:"window_type"`
 	WindowSize  int    `yaml:"window_size"`
+	Slide       int    `yaml:"slide"`
 	Query       string `yaml:"query"`
 	ReturnType  string `yaml:"return_type"`
 	IsAlert     bool   `yaml:"is_alert"`
 	AlertFormat string `yaml:"alert_format"`
+}
+
+// SlideSeconds is how far a window's start advances between emissions.
+// Unset means tumbling: the window advances by its own length.
+func (q Query) SlideSeconds() int {
+	if q.Slide == 0 {
+		return q.WindowSize
+	}
+	return q.Slide
 }
 
 type ColumnDef struct {
@@ -87,12 +98,38 @@ func LoadConfig() Config {
 		log.Fatalf("[Config] Failed to parse config file: %v", err)
 	}
 
+	for _, q := range config.Queries {
+		if err := q.validate(); err != nil {
+			log.Fatalf("[Config] Invalid query %q: %v", q.Name, err)
+		}
+	}
+
 	for name := range config.Sources {
 		log.Printf("[Config] Loaded source: %s", name)
 	}
 	for _, q := range config.Queries {
-		log.Printf("[Config] Loaded query: %s (%s)", q.Name, q.ReturnType)
+		log.Printf("[Config] Loaded query: %s (%s, %s %ds slide %ds)",
+			q.Name, q.ReturnType, q.WindowType, q.WindowSize, q.SlideSeconds())
 	}
 
 	return config
+}
+
+// A slide wider than the window would leave gaps between windows, so the events
+// falling in them would never reach a worker -- silent loss, hence fatal.
+func (q Query) validate() error {
+	if q.WindowSize <= 0 {
+		return fmt.Errorf("window_size must be positive, got %d", q.WindowSize)
+	}
+	if q.Slide < 0 {
+		return fmt.Errorf("slide must not be negative, got %d", q.Slide)
+	}
+	if q.SlideSeconds() > q.WindowSize {
+		return fmt.Errorf("slide %ds exceeds window_size %ds, which would leave gaps between windows",
+			q.SlideSeconds(), q.WindowSize)
+	}
+	if q.WindowType == "tumbling" && q.SlideSeconds() != q.WindowSize {
+		return fmt.Errorf("tumbling windows cannot slide: drop slide, or set window_type: sliding")
+	}
+	return nil
 }

@@ -709,9 +709,7 @@ func (c *Coordinator) handleTumbling(ctx context.Context, t time.Time, q config.
 }
 
 func (c *Coordinator) handleSliding(ctx context.Context, t time.Time, q config.Query) error {
-	const slideSeconds = 60
-	slideSecs := int64(slideSeconds) // int64(q.SlideInSeconds)
-	return c.createWindows(ctx, t, q, slideSecs)
+	return c.createWindows(ctx, t, q, int64(q.SlideSeconds()))
 }
 
 func (c *Coordinator) handleSession(ctx context.Context, t time.Time, q config.Query) error {
