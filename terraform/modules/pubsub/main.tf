@@ -1,5 +1,5 @@
-# Pull-only. The push ingestor and this pull subscription must never coexist
-# (they write the same Redis keys) — this module intentionally has no push_config.
+# Pull-only: a push subscription would feed the retired push ingestor, which
+# writes the same Redis keys.
 
 resource "google_pubsub_topic" "ais_stream" {
   name    = var.topic_id
