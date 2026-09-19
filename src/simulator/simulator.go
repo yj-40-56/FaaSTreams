@@ -12,12 +12,11 @@ import (
 	"cloud.google.com/go/pubsub"
 )
 
-// Playback is the whole simulator config, read from env vars only. The simulator
-// isn't deployed, so it doesn't touch the shared query config even where that
-// means duplicating a value (TimestampField, TimestampFormat).
+// The whole simulator config, from env vars only. It isn't deployed, so it
+// never touches the shared query config, even where that duplicates a value
+// (TimestampField, TimestampFormat).
 //
-// ScaleFactor compresses CSV event timestamps so data plays back faster than it was recorded.
-// Formula: scaleFactor = CSV duration / desired real duration
+// ScaleFactor = CSV duration / desired real duration.
 //
 // | CSV data | Real time | scaleFactor |
 // |----------|-----------|-------------|
@@ -36,6 +35,10 @@ type Playback struct {
 	// drops every event.
 	TimestampField  string
 	TimestampFormat string
+
+	// Stamps the source line number, so identical rows cannot collapse into
+	// one ZADD member. Empty disables it.
+	SeqField string
 }
 
 // loadPlayback reads the config from env vars. CSV path and timestamp settings
@@ -47,6 +50,7 @@ func loadPlayback() Playback {
 		ScaleFactor:     1.0,
 		TimestampField:  os.Getenv("SIM_TIMESTAMP_FIELD"),
 		TimestampFormat: os.Getenv("SIM_TIMESTAMP_FORMAT"),
+		SeqField:        os.Getenv("SIM_SEQ_FIELD"),
 	}
 
 	if playback.CsvPath == "" {
@@ -183,6 +187,9 @@ func (s *Simulator) Run(ctx context.Context) {
 		record[s.playback.TimestampField] = newTimestamp.UTC().Format(s.playback.TimestampFormat)
 
 		record["_source"] = s.sourceName
+		if s.playback.SeqField != "" {
+			record[s.playback.SeqField] = strconv.Itoa(lineCount)
+		}
 		messageBytes, err := json.Marshal(record)
 		if err != nil {
 			log.Printf("[SIMULATOR] JSON error at line %d: %v", lineCount, err)

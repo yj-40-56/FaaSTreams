@@ -127,15 +127,15 @@ docker compose -f docker/docker-compose.dev.yml down -v
 
 The pipeline runs as four independently deployed Cloud Functions (gen2): `ingestor`, `windower`, `worker` and `data-sink`. Data flows `simulator → Pub/Sub → ingestor → Redis → windower → worker → data-sink`.
 
-See `scripts/deploy-ingestor.sh`, `scripts/deploy-windower.sh`, `scripts/deploy-worker.sh`, and `scripts/deploy-data-sink.sh` for the exact `gcloud functions deploy` invocations.
+See `scripts/deploy-ingestor-pull.sh`, `scripts/deploy-windower.sh`, `scripts/deploy-worker.sh`, and `scripts/deploy-data-sink.sh` for the exact `gcloud functions deploy` invocations. `scripts/deploy-ingestor.sh` deploys the retired push ingestor and is kept for reference only.
 
 ```bash
-# ingestor - triggered by messages on the Pub/Sub topic
-gcloud functions deploy ingestor --gen2 --runtime go126 --region europe-west3 \
-  --memory 2048Mi --cpu 2 --source src/ingestor --entry-point IngestEvent \
-  --trigger-topic ais-stream --network default \
+# ingestor-pull - HTTP-triggered by Cloud Scheduler, drains a pull subscription
+gcloud functions deploy ingestor-pull --gen2 --runtime go126 --region europe-west3 \
+  --memory 2048Mi --cpu 2 --source src/ingestor --entry-point IngestPull \
+  --trigger-http --allow-unauthenticated --network default \
   --subnet projects/faastreams/regions/europe-west3/subnetworks/default \
-  --env-vars-file env/gcloud-env-ingestor.yaml --max-instances 6 --concurrency 20
+  --env-vars-file env/gcloud-env-ingestor-pull.yaml --max-instances 4 --concurrency 1
 
 # windower - HTTP-triggered, invoked to process pending windows
 gcloud functions deploy windower --gen2 --runtime go126 --region europe-west3 \
@@ -159,29 +159,33 @@ gcloud functions deploy data-sink --gen2 --runtime python312 --region europe-wes
   --env-vars-file env/gcloud-env-data-sink.yaml
 ```
 
-Then run the simulator (from `src/simulator`) to publish mock AIS data to the Pub/Sub topic the ingestor is subscribed to:
+Then run the simulator to publish mock AIS data to the topic the pull subscription reads:
 
 ```bash
-PUBSUB_PROJECT_ID=faastreams PUBSUB_TOPIC_ID=ais-stream CONFIG_BUCKET=faastreams-config \
-  CONFIG_OBJECT=query-config.yaml SOURCE_NAME=ais_data_v1 go run .
+cd scripts && bash run-simulator.sh
 ```
 
-## Experimental: Pull-Based Ingestion
+It is configured by env vars in that script, not by the query config. `SIM_SCALE_FACTOR` is CSV duration over desired real duration, and `SIM_RUNTIME` caps the run in real time. The ingestor must already be pulling when it starts: a paused Scheduler job means nothing drains the subscription, and Pub/Sub delivers the resulting backlog out of order.
 
-`ingestor-pull` (`src/ingestor/pull.go`, entry point `IngestPull`) is an alternate `ingestor` implementation being evaluated as a fix for push-ingestion backlog under load (see [[ingestor-throughput-capacity]] in project memory). Instead of one invocation per Pub/Sub message, it's HTTP-triggered by Cloud Scheduler on a fixed interval; each invocation (a **Tick**) drains a pull subscription until idle, writes everything to the same `data:<source>` Redis keys the push ingestor uses, then calls windower's `ProcessWindows` directly (fire-and-forget) instead of relying on windower's own schedule. See `CONTEXT.md` for the Push/Pull Ingestor, Tick, and Drain terminology.
+## Pull-Based Ingestion
 
-This is a parallel experiment, not a replacement: the push and pull ingestors are never deployed at the same time, and are compared sequentially (A/B), since both write into the same Redis keys and a topic fans out to every subscription independently.
+`ingestor-pull` (`src/ingestor/pull.go`, entry point `IngestPull`) is the only ingestor deployed. Rather than one invocation per Pub/Sub message, it is HTTP-triggered by Cloud Scheduler on a fixed interval. Each invocation keeps a Receive session open for up to `maxSessionDuration`, writes what it drains into `data:<source>`, and nudges windower's `ProcessWindows` directly (fire-and-forget) every `interval`.
 
-To run a pull-ingestor test:
+Terminology: a **Tick** is one Scheduler-triggered invocation; a **Drain** is the repeated pulling inside it, bounded by the session deadline and ended early once the subscription goes quiet.
+
+Sessions overlap by design. A Scheduler job will not start a run while its own previous attempt is open, so one job holds a session roughly `maxSessionDuration / 120s` of the time; several jobs on staggered schedules are what keep the subscription continuously pulled. Overlap is safe because the writes are idempotent `ZADD`s and the windower takes the minimum watermark across live instances.
+
+The subscription is created separately, since a topic fans out to every subscription independently:
 
 ```bash
 bash scripts/create-pull-subscription.sh   # creates ais-stream-pull fresh
-gcloud functions delete ingestor --region europe-west3 --quiet   # push ingestor must not be live
 bash scripts/deploy-ingestor-pull.sh
-# point Cloud Scheduler's job at ingestor-pull's URL instead of windower's for the duration of the test
+# then point a Cloud Scheduler job at ingestor-pull's URL
 ```
 
-Afterwards, redeploy the push ingestor (`scripts/deploy-ingestor.sh`), point Scheduler back at windower, and run `scripts/delete-pull-subscription.sh` so `ais-stream-pull` doesn't linger and accumulate backlog between runs.
+`scripts/delete-pull-subscription.sh` removes it again so it does not accumulate backlog between runs.
+
+The push ingestor (`IngestEvent` in `src/ingestor/main.go`) is retired but still compiles; it fell behind under load, where per-message invocation overhead dominated. The two were never deployed at the same time. Its entry point is left in place because `init()` runs for every entry point built from this source directory, so removing it is a separate change.
 
 ## Query Config
 
@@ -201,11 +205,23 @@ gsutil cp gs://faastreams-config/query-config.yaml ./query-config.yaml
 
 ## Redis Key Layout
 
-| Component             | Key                                                                          | Source                                                                              |
-| --------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| ingestor writes       | `data:<source>`                                                              | `src/ingestor/main.go` (`dataKey = "data"`)                                         |
-| windower reads/writes | `data:<source>`, `window:next:<source>`, `lock:<source>:<query>`             | `src/windower/main.go`                                                              |
-| worker reads          | `data:<source>`                                                              | `src/worker/fetch.py` (`DATA_KEY_PREFIX` + `data_source` from the trigger payload)  |
-| data-sink writes      | `analytics-results` (fixed, not per-source — single combined results stream) | `src/data-sink/handler.py` (`REDIS_KEY` env var, defaults to `"analytics-results"`) |
+| Component             | Key                                                             | Mode         | Source                                                                             |
+| --------------------- | --------------------------------------------------------------- | ------------ | ---------------------------------------------------------------------------------- |
+| ingestor              | `data:<source>`                                                 | writes       | `src/ingestor/main.go` (`dataKey = "data"`)                                        |
+| ingestor              | `watermark:<source>`                                            | writes       | `src/ingestor/watermark.go` (hash, one field per instance)                         |
+| ingestor              | `watermark:floor:<source>`                                      | **reads**    | `src/ingestor/watermark.go` (`seedWatermarks`); owned by the windower               |
+| ingestor (push, retired) | `active:<source>`, `session:<source>:<id>`                   | writes       | `src/ingestor/main.go`                                                             |
+| windower              | `data:<source>`, `window:next:<source>`, `lock:<source>:<query>` | reads/writes | `src/windower/main.go`                                                             |
+| windower              | `pending:<source>`, `pending:meta:<source>`                     | reads/writes | `src/windower/main.go` (worker-confirmed retention)                                |
+| windower              | `watermark:<source>`                                            | reads        | `src/windower/main.go` (`closeTime`, minimum across live instances)                |
+| windower              | `watermark:floor:<source>`, `watermark:stall:<source>`          | writes       | `src/windower/main.go` (monotonic floor, stall hatch)                              |
+| worker                | `data:<source>`                                                 | reads        | `src/worker/fetch.py` (`DATA_KEY_PREFIX` + `data_source` from the trigger payload) |
+| worker                | `pending:<source>`, `inflight:<source>:<query>::<start>:<end>`   | reads/writes | `src/worker/fetch.py` (lease, cleared on confirmation)                             |
+| data-sink             | `analytics-results` (fixed, not per-source)                     | writes       | `src/data-sink/handler.py` (`REDIS_KEY` env var)                                   |
 
-Note: `"data"` is defined as an independent literal in each of the three components above — nothing enforces that they agree beyond convention. A prior refactor changed the ingestor's key scheme without updating the worker's, silently breaking the pipeline (worker read from a dead key and always returned zero results) until the mismatch was found and fixed. Keep this in mind when changing key naming on any one side.
+Note: key prefixes are independent literals in each component -- nothing enforces that they agree beyond convention. A prior refactor changed the ingestor's key scheme without updating the worker's, silently breaking the pipeline (worker read from a dead key and always returned zero results) until the mismatch was found and fixed. Keep this in mind when changing key naming on any one side.
+
+Two cross-component couplings, neither enforced:
+
+- `watermark:<source>` is written by the ingestor and read by the windower, which takes the **minimum across live instances** and drops a field once it goes stale.
+- `watermark:floor:<source>` is owned by the windower but **read by the ingestor** at session start, so a cold-started instance adopts the promise already acted on rather than computing one from the partial view its first messages give.
