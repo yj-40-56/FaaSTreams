@@ -1,55 +1,39 @@
-# One-command provisioning for the FaaSTreams pipeline.
-#
-# This wraps terraform/Makefile (via `$(MAKE) -C terraform`, not `include` — that
-# Makefile's Docker volume mount assumes its own directory as cwd). Every target
-# here is a thin delegation; terraform/Makefile has the full set and remains
-# directly runnable on its own.
-#
-# IMPORTANT: push and pull ingestors must never run simultaneously — they write the
-# same Redis keys. This repo's live pipeline uses the pull ingestor (ingestor-pull);
-# see terraform/README.md and README.md.
+# Thin wrappers around terraform/Makefile, which has the full target set.
 
-ENV ?= live
-# Subcommand for `make terraform-state`, e.g. ARGS="show module.worker.google_cloudfunctions2_function.this"
-ARGS ?= list
+PROJECT ?= faas-pj
+ARGS    ?= list
 
-.PHONY: help terraform-plan terraform-apply terraform-import-live terraform-state terraform-show \
+TF_MAKE = $(MAKE) -C terraform PROJECT=$(PROJECT)
+
+.PHONY: help terraform-init terraform-plan terraform-apply terraform-state terraform-output \
         scheduler-pause scheduler-resume
 
 help:
-	@echo "make terraform-plan          - preview infra changes (ENV=$(ENV)), safe anytime"
-	@echo "make terraform-apply         - apply infra changes (ENV=$(ENV)), interactive confirm"
-	@echo "make terraform-import-live   - one-time: import existing live GCP resources into state"
-	@echo "make terraform-state         - terraform state list (ARGS=\"show <addr>\" for other subcommands)"
-	@echo "make terraform-show          - terraform show (full current state, human-readable)"
-	@echo "make scheduler-pause         - pause both live Cloud Scheduler jobs"
-	@echo "make scheduler-resume        - resume coordinator-5sec-trigger (JOBS=... to override)"
-	@echo ""
-	@echo "Individual scripts (scripts/*.sh) remain directly runnable."
-	@echo "terraform/Makefile has the full terraform target set (plan/apply/destroy/import-live/...)."
+	@echo "make terraform-init      - init against PROJECT's state bucket (PROJECT=$(PROJECT))"
+	@echo "make terraform-plan      - preview infra changes, safe anytime"
+	@echo "make terraform-apply     - apply infra changes, interactive confirm"
+	@echo "make terraform-state     - terraform state list (ARGS=\"show <addr>\" for others)"
+	@echo "make terraform-output    - service URLs, Redis host, scheduler jobs"
+	@echo "make scheduler-pause     - pause every ingestor tick"
+	@echo "make scheduler-resume    - resume every ingestor tick"
+
+terraform-init:
+	$(TF_MAKE) init
 
 terraform-plan:
-	$(MAKE) -C terraform plan ENV=$(ENV)
+	$(TF_MAKE) plan
 
 terraform-apply:
-ifeq ($(ENV),live)
-	@echo "*** Applying against LIVE resources: ingestor-pull, windower, worker, data-sink,"
-	@echo "*** ais-stream-pull, scheduler jobs. This affects the real running pipeline."
-	@echo "*** Review the plan output above carefully before confirming."
-endif
-	$(MAKE) -C terraform apply ENV=$(ENV)
-
-terraform-import-live:
-	$(MAKE) -C terraform import-live
+	$(TF_MAKE) apply
 
 terraform-state:
-	$(MAKE) -C terraform state ENV=$(ENV) ARGS="$(ARGS)"
+	$(TF_MAKE) state ARGS="$(ARGS)"
 
-terraform-show:
-	$(MAKE) -C terraform show ENV=$(ENV)
+terraform-output:
+	$(TF_MAKE) output
 
 scheduler-pause:
-	$(MAKE) -C terraform scheduler-pause
+	$(TF_MAKE) scheduler-pause
 
 scheduler-resume:
-	$(MAKE) -C terraform scheduler-resume
+	$(TF_MAKE) scheduler-resume
