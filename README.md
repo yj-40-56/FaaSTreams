@@ -8,6 +8,36 @@ In the final production architecture, live data will be pushed from external sou
 
 ---
 
+## Provisioning with Terraform
+
+`terraform/` provisions the infrastructure this repository deploys to, and nothing
+else: the five services (`ingestor-pull`, `windower`, `worker`, `data-sink`,
+`pinger`), the shared Memorystore Redis instance, the Serverless VPC Access
+connector they reach it through, the `ais-stream` Pub/Sub topic and subscription,
+the `faastreams-queue` Cloud Tasks queue, and the two Cloud Scheduler jobs.
+
+From the repo root:
+
+```bash
+make terraform-plan          # preview infra changes, safe anytime
+make terraform-apply         # apply after reviewing the plan
+make help                    # full target list
+```
+
+The resources above already exist in the live project, so they must be imported
+into Terraform state before the first apply. See `terraform/README.md` for that
+procedure and for the known caveats, in particular the VPC connector attachment.
+`terraform/Makefile` has the full target set and is directly runnable on its own.
+
+**This configuration has not been applied to Google Cloud.** The project's billing
+account has been closed since 2026-09-11, so `plan`, `apply` and `import` all fail
+with `BILLING_DISABLED`. `terraform/README.md` has a Verification status section
+setting out exactly what was and was not checked. The local stack below runs the
+same services and needs no Google Cloud account.
+
+Everything else in this README describes the system itself and is unchanged by the
+presence of Terraform. The `scripts/` deploy commands remain the alternative path.
+
 ## Worker
 
 FaaS worker (`src/worker`) that, given a time window and query from the windower, fetches the matching AIS records from Redis, loads them into DuckDB, runs the configured query, and emits proximity warnings for vessels approaching defined hazard zones.
@@ -58,10 +88,39 @@ docker compose -f docker/docker-compose.dev.yml up --build
 
 When using this setup, ensure that the data folder contains a .csv with its header (column names).
 
+The stack mirrors the deployed topology in `terraform/main.tf`. Every application
+container runs the same source and the same entry point Terraform deploys, with
+`FUNCTION_TARGET` set to the module's `build_config.entry_point`. Managed services
+are substituted only where they have to be: the Pub/Sub emulator for Pub/Sub,
+fake-gcs-server for the query-config bucket, a curl loop for Cloud Scheduler, and
+plain Redis for Memorystore.
+
+Cloud Tasks and the pinger are deliberately not modelled. `IngestPull` paces the
+windower from inside its own session, so the pinger is a redundant second trigger
+path that exists only in the cloud.
+
+Service endpoints, once up:
+
+| Service    | Local URL               |
+|------------|-------------------------|
+| worker     | `http://localhost:8080` |
+| ingestor   | `http://localhost:8081` |
+| windower   | `http://localhost:8082` |
+| data-sink  | `http://localhost:8083` |
+
+Results land in the `analytics-results` sorted set in Redis:
+
+```bash
+docker compose -f docker/docker-compose.dev.yml exec redis redis-cli zrange analytics-results 0 -1
+```
+
+Note that the bundled simulator publishes `ais_data_v1` only, so the queries bound
+to `t-drive_data_v1` and to `generic` log empty windows on every tick.
+
 To delete the setup run:
 
 ```bash
-docker compose -f docker/docker-compose.dev.yml down
+docker compose -f docker/docker-compose.dev.yml down -v
 ```
 
 ## E2E Example - Google Cloud

@@ -1,13 +1,157 @@
+# Local end-to-end stack. Mirrors the deployed topology in terraform/main.tf:
+#
+#   simulator -> Pub/Sub -> ingestor(IngestPull) -> Redis
+#                              \-> windower(ProcessWindows) -> worker -> data-sink -> Redis
+#
+# Substitutions for managed services, and only these: the Pub/Sub emulator for
+# Pub/Sub, fake-gcs-server for the query-config bucket, a curl loop for Cloud
+# Scheduler, and plain Redis for Memorystore. Cloud Tasks and the pinger are not
+# modelled: IngestPull paces the windower from inside its own session, so the
+# pinger is a redundant second trigger path that only exists in the cloud.
+#
+# Every application container runs the same source and the same entry point that
+# Terraform deploys.
+
+name: faastreams-dev
+
 services:
-  simulator:
-    build:
-      context: ..
-      dockerfile: src/simulator/Dockerfile
+  redis:
+    image: redis:latest
+    command: redis-server --save "" --appendonly no
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  pubsub:
+    image: google/cloud-sdk:emulators
+    command: gcloud beta emulators pubsub start --host-port=0.0.0.0:8085
+    ports:
+      - "8085:8085"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Stands in for the GCS bucket holding query-config.yaml. The Go storage
+  # client in src/ingestor/config and src/windower/config honours
+  # STORAGE_EMULATOR_HOST, so both services take their real GCS code path.
+  gcs:
+    image: fsouza/fake-gcs-server:latest
+    command: -scheme http -port 4443 -data /data -public-host gcs:4443
+    ports:
+      - "4443:4443"
+    volumes:
+      - ../env/query-config-reference.yaml:/data/faastreams-config/query-config.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4443/storage/v1/b"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # One-shot: creates the topic and pull subscription the emulator starts without.
+  pubsub-init:
+    image: curlimages/curl:latest
+    entrypoint: ["/bin/sh", "/init.sh"]
+    volumes:
+      - ./pubsub-init/init.sh:/init.sh:ro
+    environment:
+      PUBSUB_EMULATOR_HOST: pubsub:8085
+      PUBSUB_PROJECT_ID: local-project
+      PUBSUB_TOPIC_ID: ais-stream
+      PUBSUB_PULL_SUBSCRIPTION_ID: ais-stream-pull
     depends_on:
       pubsub:
         condition: service_healthy
-      coordinator:
-        condition: service_started
+
+  ingestor:
+    build:
+      context: ..
+      dockerfile: docker/ingestor/Dockerfile
+    ports:
+      - "8081:8080"
+    environment:
+      PORT: "8080"
+      # Cloud Functions sets FUNCTION_TARGET from build_config.entry_point. This
+      # source registers two entry points (IngestEvent, IngestPull), so without
+      # it the framework serves neither at "/" and every trigger 404s.
+      FUNCTION_TARGET: IngestPull
+      REDIS_URL: redis:6379
+      CONFIG_BUCKET: faastreams-config
+      CONFIG_OBJECT: query-config.yaml
+      STORAGE_EMULATOR_HOST: http://gcs:4443
+      PUBSUB_EMULATOR_HOST: pubsub:8085
+      PUBSUB_PROJECT_ID: local-project
+      PUBSUB_PULL_SUBSCRIPTION_ID: ais-stream-pull
+      WINDOWER_URL: http://windower:8080
+    depends_on:
+      redis:
+        condition: service_healthy
+      gcs:
+        condition: service_healthy
+      pubsub-init:
+        condition: service_completed_successfully
+    restart: on-failure
+
+  windower:
+    build:
+      context: ..
+      dockerfile: docker/windower/Dockerfile
+    ports:
+      - "8082:8080"
+    environment:
+      PORT: "8080"
+      FUNCTION_TARGET: ProcessWindows
+      REDIS_URL: redis:6379
+      WORKER_URL: http://worker:8080
+      CONFIG_BUCKET: faastreams-config
+      CONFIG_OBJECT: query-config.yaml
+      STORAGE_EMULATOR_HOST: http://gcs:4443
+    depends_on:
+      redis:
+        condition: service_healthy
+      gcs:
+        condition: service_healthy
+    restart: on-failure
+
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/worker/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      DATA_SINK_URL: http://data-sink:8080
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: on-failure
+
+  data-sink:
+    build:
+      context: ..
+      dockerfile: docker/data-sink/Dockerfile
+    ports:
+      - "8083:8080"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_KEY: analytics-results
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: on-failure
+
+  simulator:
+    build:
+      context: ..
+      dockerfile: docker/simulator/Dockerfile
     environment:
       PUBSUB_EMULATOR_HOST: pubsub:8085
       PUBSUB_PROJECT_ID: local-project
@@ -18,68 +162,18 @@ services:
       SIM_TIMESTAMP_FORMAT: "02/01/2006 15:04:05"
     volumes:
       - ../data:/app/data:ro
-
-  pubsub:
-    image: google/cloud-sdk:emulators
-    command: gcloud beta emulators pubsub start --host-port=0.0.0.0:8085
-    ports:
-      - "8085:8085"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8085"]
-      interval: 60s
-      timeout: 3s
-      retries: 10
-
-  coordinator:
-    build:
-      context: ..
-      dockerfile: src/coordinator/Dockerfile
     depends_on:
-      redis:
-        condition: service_healthy
-      pubsub:
-        condition: service_healthy
-    ports:
-      - "8000:8000"
-    environment:
-      PUBSUB_EMULATOR_HOST: pubsub:8085
-      PUBSUB_PROJECT_ID: local-project
-      PUBSUB_TOPIC_ID: ais-stream
-      PUBSUB_SUBSCRIPTION_ID: coordinator-sub
-      REDIS_HOST: redis
-      REDIS_PORT: "6379"
-      WORKER_URL: http://worker:8080
-      CONFIG_PATH: /app/config/test.yaml
+      pubsub-init:
+        condition: service_completed_successfully
+
+  # Stands in for Cloud Scheduler's job against ingestor-pull.
+  scheduler:
+    image: curlimages/curl:latest
+    entrypoint: ["/bin/sh", "/tick.sh"]
     volumes:
-      - ../data:/app/data:ro
-      - coordinator-go-cache:/go/pkg/mod
-    restart: on-failure
-
-  redis:
-    image: redis:latest
-    command: redis-server --save "" --appendonly no
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  worker:
-    build:
-      context: ..
-      dockerfile: src/worker/Dockerfile
-    ports:
-      - "8080:8080"
+      - ./pubsub-init/tick.sh:/tick.sh:ro
     environment:
-      REDIS_HOST: redis
-      REDIS_PORT: "6379"
+      TICK_URL: http://ingestor:8080/
+      TICK_INTERVAL: "60"
     depends_on:
-      redis:
-        condition: service_healthy
-
-
-volumes:
-  coordinator-go-cache:
-
+      - ingestor
