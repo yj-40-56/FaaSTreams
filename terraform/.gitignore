@@ -1,9 +1,8 @@
 .terraform/
-.terraform.lock.hcl
 terraform.tfstate
 terraform.tfstate.backup
 *.tfstate
 *.tfstate.*
+*_override.tf
 
-# Generated source archives created by archive_file data sources
-modules/**/*.zip
+.archives/
