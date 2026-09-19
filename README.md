@@ -10,33 +10,21 @@ In the final production architecture, live data will be pushed from external sou
 
 ## Provisioning with Terraform
 
-`terraform/` provisions the infrastructure this repository deploys to, and nothing
-else: the five services (`ingestor-pull`, `windower`, `worker`, `data-sink`,
-`pinger`), the shared Memorystore Redis instance, the Serverless VPC Access
-connector they reach it through, the `ais-stream` Pub/Sub topic and subscription,
-the `faastreams-queue` Cloud Tasks queue, and the two Cloud Scheduler jobs.
-
-From the repo root:
+`terraform/` provisions the whole pipeline in one GCP project (`faas-pj` today):
+the network, Memorystore Redis and bastion, the `ais-stream` topic and pull
+subscription, the four services on direct VPC egress, and the four Cloud Scheduler
+jobs that restart ingestor sessions.
 
 ```bash
+make terraform-init
 make terraform-plan          # preview infra changes, safe anytime
 make terraform-apply         # apply after reviewing the plan
 make help                    # full target list
 ```
 
-The resources above already exist in the live project, so they must be imported
-into Terraform state before the first apply. See `terraform/README.md` for that
-procedure and for the known caveats, in particular the VPC connector attachment.
-`terraform/Makefile` has the full target set and is directly runnable on its own.
-
-**This configuration has not been applied to Google Cloud.** The project's billing
-account has been closed since 2026-09-11, so `plan`, `apply` and `import` all fail
-with `BILLING_DISABLED`. `terraform/README.md` has a Verification status section
-setting out exactly what was and was not checked. The local stack below runs the
-same services and needs no Google Cloud account.
-
-Everything else in this README describes the system itself and is unchanged by the
-presence of Terraform. The `scripts/` deploy commands remain the alternative path.
+`terraform/README.md` covers environments, adopting existing resources, and the
+constraints (instance caps, shared vCPU, public endpoints). The `scripts/` deploy
+commands remain the alternative path.
 
 ## Worker
 
