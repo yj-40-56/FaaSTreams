@@ -8,12 +8,10 @@ DATA_KEY_PREFIX = "data"  # matches ingestor's dataKey const (cmd/coordinator/in
 PENDING_KEY_PREFIX = "pending"  # matches windower's pendingKey const (src/windower/main.go)
 INFLIGHT_KEY_PREFIX = "inflight"  # matches windower's inflightKey const (src/windower/main.go)
 
-# Lease timings.
-#
-# The lease must outlive several missed refreshes -- this process may be under
-# heavy memory pressure while the query runs -- but expire soon enough that a
-# window whose worker died is retried quickly. The ratio is what matters: a TTL
-# of four refresh intervals gives four chances to survive a stall.
+# Lease timings. The TTL must outlive several missed refreshes -- this process
+# may be under memory pressure while the query runs -- but expire soon enough to
+# retry a dead worker's window. The ratio is what matters: four refresh
+# intervals give four chances to survive a stall.
 #
 # Like the windower's timing consts these are absolute, and only hold while the
 # window size stays in the same order of magnitude. A 5s window processed under

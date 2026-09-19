@@ -31,7 +31,7 @@ def main():
     ax.bar(range(len(minutes)), values, width=1.0)
     ax.set_xlabel("Minute")
     ax.set_ylabel("Number of events")
-    ax.set_title(f"Events per minute — {csv_path}")
+    ax.set_title(f"Events per minute -- {csv_path}")
 
     step = max(1, len(minutes) // 40)
     ax.set_xticks(range(0, len(minutes), step))

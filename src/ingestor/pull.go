@@ -18,32 +18,28 @@ import (
 const (
 	drainIdleWindow = 2000 * time.Millisecond
 
-	// Two scheduler jobs on alternate minutes each open one, so ticks never
-	// leave an unpulled stretch longer than a session start latency.
+	// Jobs on alternate minutes overlap, so no stretch goes unpulled.
 	maxSessionDuration = 100 * time.Second
 
-	// A message published this long ago proves the subscription still holds a
-	// backlog: at the publish rate, fresh delivery is sub-second.
+	// Proof of a backlog: fresh delivery is sub-second at the publish rate.
 	backlogArrivalAge = 10 * time.Second
 
-	// How long delivery must stay fresh before the watermark may advance
-	// again. A backlog arrives interleaved with fresh messages, so one fresh
-	// moment is not evidence that the backlog is gone: measured, 2s still let
-	// 6,830 events through where 10s let none.
+	// A backlog arrives interleaved with fresh messages, so one fresh moment
+	// proves nothing. Measured: 2s leaked 6,830 events, 10s none.
 	drainClearWindow = 10 * time.Second
 	interval         = 5 * time.Second
 	maxDelay         = 1500 * time.Millisecond
 
-	// how many messages can be outstanding at once — meaning delivered by the server to this client but not yet acked
+	// Delivered but not yet acked.
 	pullMaxOutstandingMessages = 20000
 
-	// number of independent StreamingPull streams the client opens to the subscription
+	// Independent StreamingPull streams.
 	pullNumGoroutines = 4
 
 	// Max ZADDs accumulated before a batch is flushed as one Redis pipeline.
 	pipelineBatchSize = 500
 
-	// Buffer size of the channel feeding the flush loop, so add() doesn't block under normal load.
+	// Keeps add() from blocking under normal load.
 	pipelineChannelBuffer = 2000
 
 	// Max time a partial batch waits before being flushed anyway.
@@ -58,19 +54,15 @@ var (
 	tracker = watermark.New()
 )
 
-// batchItem pairs a parsed Redis write with the pubsub message it came from,
-// so the message can be acked/nacked once the batch it landed in is flushed.
+// Pairs a write with its message, so the ack follows the flush.
 type batchItem struct {
 	rec eventRecord
 	msg *pubsub.Message
 }
 
-// writeBatcher accumulates parsed events on a single background goroutine
-// and flushes them to Redis as pipelined, grouped ZADDs. A single loop is
-// enough — measured Exec latency is only ~3-10ms, so it can push far more
-// throughput than this pipeline needs without needing concurrent flushers.
-// Call add() from any goroutine; call close() once (after Receive returns)
-// to flush whatever's left and wait for the loop to finish.
+// Batches events on one goroutine, flushed as pipelined grouped ZADDs.
+// One loop suffices: Exec latency is ~3-10ms, far more headroom than needed.
+// add() is safe from any goroutine; close() once, after Receive returns.
 type writeBatcher struct {
 	items     chan batchItem
 	done      chan struct{}
@@ -78,8 +70,7 @@ type writeBatcher struct {
 	processed *int64
 	failed    *int64
 
-	// Members actually added, summed from the ZADD replies. Diverges from
-	// processed when duplicate payloads collapse.
+	// From the ZADD replies; diverges from processed when duplicates collapse.
 	stored *int64
 }
 
@@ -100,9 +91,7 @@ func (b *writeBatcher) add(item batchItem) {
 	b.items <- item
 }
 
-// close stops accepting new items, flushes whatever's buffered, and waits
-// for the loop to drain. Must only be called once, after all add() calls
-// have returned.
+// Once only, after every add() has returned.
 func (b *writeBatcher) close() {
 	close(b.items)
 	<-b.done
@@ -136,22 +125,16 @@ func (b *writeBatcher) run() {
 	}
 }
 
-// flush pipelines batch to Redis and acks/nacks each message by its group's
-// result. It uses its own context rather than the session's context, since a
-// flush triggered near/after the session deadline must still be able to
-// complete and ack — it isn't part of the pull itself, just bookkeeping for
-// messages already received.
+// Acks/nacks each message by its group's result. Own context, not the
+// session's: a flush past the deadline must still complete and ack.
 func (b *writeBatcher) flush(batch []batchItem) {
 	if len(batch) == 0 {
 		return
 	}
 
-	// Group by target key so events bound for the same sorted set collapse
-	// into a single ZADD with many score/member pairs, instead of one ZADD
-	// per event. Pipelining already cut round-trips; Redis still counts and
-	// processes each pipelined command separately, so this is what actually
-	// cuts the number of commands the (single-threaded) server has to work
-	// through — the thing INFO stats showed was the real ceiling.
+	// One ZADD per key, not per event. Pipelining cuts round-trips, but Redis
+	// processes each pipelined command separately, and command count was the
+	// measured ceiling on the single-threaded server.
 	groups := make(map[string][]batchItem, 1)
 	for _, it := range batch {
 		groups[it.rec.key] = append(groups[it.rec.key], it)
@@ -195,12 +178,9 @@ func (b *writeBatcher) flush(batch []batchItem) {
 }
 
 func init() {
-	// init() runs unconditionally for every entry point built from this source
-	// dir (main.go's IngestEvent included) regardless of which one --entry-point
-	// actually selects at deploy time. The push ingestor's env file doesn't set
-	// these, so treat their absence as "this deployment isn't using the pull
-	// entry point" and skip registration, rather than log.Fatal-ing the whole
-	// process before it can bind PORT 8080.
+	// init() runs for every entry point in this dir, whichever --entry-point
+	// selects. Absent vars mean this deployment is not the pull one: skip
+	// registration rather than log.Fatal before PORT 8080 is bound.
 	projectID := os.Getenv("PUBSUB_PROJECT_ID")
 	subID := os.Getenv("PUBSUB_PULL_SUBSCRIPTION_ID")
 	windowerURL = os.Getenv("WINDOWER_URL")
@@ -219,14 +199,12 @@ func init() {
 	functions.HTTP("IngestPull", ingestPull)
 }
 
-// ingestPull is a Tick: it keeps a single Pub/Sub Receive session open for up
-// to maxSessionDuration, parsing and pipelining writes to Redis (via
-// writeBatcher) as messages arrive, while an internal ticker nudges windower
-// every `interval`. The session ends early once the subscription goes quiet, so
-// an idle pipeline costs nothing; the backlog that builds before the next tick
-// is safe because the watermark holds while old-published messages keep
-// arriving. Sessions overlap by design: writes are idempotent ZADDs and the
-// windower takes the minimum watermark across instances.
+// One Tick: a Receive session up to maxSessionDuration, writing via
+// writeBatcher while a ticker nudges windower every interval. Exits early when
+// quiet, so an idle pipeline costs nothing -- the backlog that then builds is
+// safe because the watermark holds while old-published messages arrive.
+// Sessions overlap by design: ZADDs are idempotent and windower takes the
+// minimum watermark across instances.
 func ingestPull(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -235,13 +213,16 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 
 	sessionStart := time.Now()
 
-	// `isShuttingDown` acts as a thread-safe coordination barrier (0 = active, 1 = stopping).
-	// It ensures the background ticker goroutine completely halts its triggers once the
-	// SubPub-Pulling terminates
+	// Stops a cold start promising past an undelivered backlog. No-op when
+	// warm: Seed only raises.
+	seedWatermarks(sessionCtx, tracker)
+
+	// isShuttingDown (0 = active, 1 = stopping) halts the ticker goroutine
+	// once Receive returns.
 	var processedSinceLastTick, failedSinceLastTick, storedSinceLastTick, isShuttingDown int64
 
-	// Only an idle exit proves the subscription had nothing left to deliver,
-	// which is what makes the no-allowance snap below sound.
+	// Only an idle exit proves nothing was left to deliver, which is what
+	// makes the no-allowance snap sound.
 	var idleExit int64
 
 	// Delivery age is the only local evidence of a backlog: event timestamps
@@ -254,19 +235,15 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 
 	batcher := newWriteBatcher(tracker, &processedSinceLastTick, &failedSinceLastTick, &storedSinceLastTick)
 
-	// to ensure that the last Windower trigger strictly adheres to the interval of `interval` (5s) seconds
+	// Keeps the final windower trigger on the interval.
 	var lastTickTime atomic.Value
 	lastTickTime.Store(time.Now())
 
-	// autonomous 5-second windower ticker
-	// internal ticker to guarantee that the Windower is triggered exactly
-	// every `interval` (5s) seconds from within this container, completely decoupling from the
-	// external scheduler as long as data is flowing.
+	// Triggers windower from inside the container, decoupled from the external
+	// scheduler while data flows.
 	windowerTicker := time.NewTicker(interval)
 	defer windowerTicker.Stop()
 
-	// triggering the windower every `interval` seconds,
-	// until the maximum session duration (`maxSessionDuration`) is reached.
 	go func() {
 		for {
 			select {
@@ -285,8 +262,8 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 					log.Printf("[PullIngestor] %d messages failed", currentFailed)
 				}
 
-				// There could be cases where a window is 2xinterval (10s) long,
-				// in which case the last `interval` (5s) are not sufficient to determine whether the window should be triggered
+				// A window can span two intervals, so one interval's counts do
+				// not decide whether to trigger.
 				log.Printf("[PullIngestor] processed %d messages, stored %d (deduped %d)",
 					currentProcessed, currentStored, currentProcessed-currentStored)
 				publishWatermarks(tracker, watermark.Conditions{Draining: draining()})
@@ -339,8 +316,7 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 	idleTimer.Stop()
 	cancelReceive()
 
-	// Partial batches are still sitting in the batcher's buffer — flush and
-	// wait for them before the final watermark, which must not promise past them.
+	// Flush before the final watermark, which must not promise past them.
 	batcher.close()
 
 	lastTick := lastTickTime.Load().(time.Time)
@@ -355,9 +331,8 @@ func ingestPull(w http.ResponseWriter, r *http.Request) {
 
 	absoluteDeadline := lastTick.Add(interval).Add(maxDelay)
 
-	// If this goroutine suffered from a massive delay
-	// the next container instance might already be active and triggering Windowers.
-	// Therefore, this final window trigger is dropped to prevent duplicates.
+	// After a long delay the next instance may already be triggering: drop
+	// this one rather than duplicate a window.
 	if time.Now().After(absoluteDeadline) {
 		log.Printf("[PullIngestor] WARNING: Slept too long! Expected total ~%v, but actually passed %v. Dropping final trigger to prevent duplicate window.", interval, time.Since(lastTick))
 		w.WriteHeader(http.StatusOK)

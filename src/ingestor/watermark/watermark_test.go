@@ -108,3 +108,45 @@ func TestSourcesAreIndependent(t *testing.T) {
 		t.Fatalf("source b watermark = %d, want %d", got, 500-AllowedLatenessSeconds)
 	}
 }
+
+// A cold start under a backlog: published is 0, so the Draining hold cannot
+// engage and the instance publishes a watermark built from the few messages it
+// happened to drain.
+func TestColdStartWhileDrainingRunsAhead(t *testing.T) {
+	tr := New()
+	tr.Begin(src, 400)
+
+	if got := tr.Watermarks(Conditions{Draining: true})[src].At; got != 400-AllowedLatenessSeconds {
+		t.Fatalf("watermark = %d, want %d: without a seed there is no promise to hold", got, 400-AllowedLatenessSeconds)
+	}
+}
+
+func TestSeedLetsAColdStartHoldTheFloor(t *testing.T) {
+	const floor = 200
+
+	tr := New()
+	tr.Seed(src, floor)
+
+	// Same partial view as above, but the promise is now inherited.
+	tr.Begin(src, 400)
+
+	if got := tr.Watermarks(Conditions{Draining: true})[src].At; got != floor {
+		t.Fatalf("watermark = %d, want it held at the seeded floor %d", got, floor)
+	}
+	if got := tr.Watermarks(Conditions{})[src].At; got != 400-AllowedLatenessSeconds {
+		t.Fatalf("watermark = %d, want %d once delivery is fresh", got, 400-AllowedLatenessSeconds)
+	}
+}
+
+func TestSeedNeverLowersThePromise(t *testing.T) {
+	tr := New()
+	tr.Begin(src, 400)
+	tr.Done(src, 400, true)
+	promised := tr.Watermarks(Conditions{})[src].At
+
+	tr.Seed(src, promised-100)
+
+	if got := tr.Watermarks(Conditions{Draining: true})[src].At; got != promised {
+		t.Fatalf("watermark = %d, want %d: a stale floor must not walk it backwards", got, promised)
+	}
+}

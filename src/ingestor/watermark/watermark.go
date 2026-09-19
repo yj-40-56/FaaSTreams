@@ -35,10 +35,9 @@ type Conditions struct {
 	// lateness allowance can be dropped.
 	Idle bool
 
-	// Draining: messages are arriving that were published long ago, so the
-	// subscription still holds a backlog. Pub/Sub delivers a backlog out of
-	// order, so anything still undelivered may be older than everything in
-	// flight -- the promise must not advance until delivery is fresh again.
+	// Draining: long-published messages are still arriving, so a backlog
+	// remains. Pub/Sub delivers one out of order, so anything undelivered may
+	// predate everything in flight: hold the promise until delivery is fresh.
 	Draining bool
 }
 
@@ -53,6 +52,18 @@ func (t *Tracker) source(name string) *sourceState {
 		t.sources[name] = s
 	}
 	return s
+}
+
+// Adopts a promise made before this instance existed. Without it a cold start
+// has published == 0, so the Draining hold cannot engage and the instance
+// promises from the few messages it drained -- ahead of what is undelivered.
+func (t *Tracker) Seed(source string, ts int64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	s := t.source(source)
+	if ts > s.published {
+		s.published = ts
+	}
 }
 
 func (t *Tracker) Begin(source string, ts int64) {
