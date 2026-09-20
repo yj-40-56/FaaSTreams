@@ -1,0 +1,66 @@
+# Short-window cost curve, 10s tumbling. One query only: a second query
+# would contend for the same worker instances and confound the per-window
+# durations this run exists to measure.
+#
+# Vary only window_size across the series (60/30/15/10) at the same scale 24.
+sources:
+  ais_data_v1:
+    description: AIS vessel tracking data
+    id_field: MMSI
+    timestamp_field: '# Timestamp'
+    timestamp_format: 02/01/2006 15:04:05
+    lat_field: Latitude
+    lon_field: Longitude
+    columns:
+      MMSI:
+        from_field: MMSI
+        type: VARCHAR
+      Name:
+        from_field: Name
+        type: VARCHAR
+      Latitude:
+        from_field: Latitude
+        type: DOUBLE
+        required: true
+      Longitude:
+        from_field: Longitude
+        type: DOUBLE
+        required: true
+      SOG:
+        from_field: SOG
+        type: DOUBLE
+      Timestamp:
+        from_field: '# Timestamp'
+        type: VARCHAR
+      NavigationalStatus:
+        from_field: Navigational status
+        type: VARCHAR
+    reference_tables:
+      zones:
+        columns:
+          zone_name: VARCHAR
+          geom_wkt: VARCHAR
+          threshold_nm: DOUBLE
+        rows:
+        - zone_name: Subsea Pipeline Corridor Kattegat
+          geom_wkt: POLYGON((10.0 57.0, 10.5 57.0, 10.5 57.5, 10.0 57.5, 10.0 57.0))
+          threshold_nm: 2.0
+        - zone_name: Offshore Wind Exclusion North Sea
+          geom_wkt: POLYGON((7.5 55.5, 8.0 55.5, 8.0 56.0, 7.5 56.0, 7.5 55.5))
+          threshold_nm: 2.0
+        - zone_name: Restricted Zone Skagerrak
+          geom_wkt: POLYGON((10.5 58.0, 11.0 58.0, 11.0 58.5, 10.5 58.5, 10.5 58.0))
+          threshold_nm: 2.0
+        - zone_name: Military Exercise Area Bornholm
+          geom_wkt: POLYGON((15.5 55.5, 16.0 55.5, 16.0 56.0, 15.5 56.0, 15.5 55.5))
+          threshold_nm: 3.0
+queries:
+- name: smoke_event_count
+  data_source: ais_data_v1
+  window_type: tumbling
+  window_size: 10
+  query: "SELECT\n  COUNT(*)             AS events,\n  COUNT(DISTINCT MMSI) AS vessels,\n  MIN(Timestamp)\
+    \       AS first_ts,\n  MAX(Timestamp)       AS last_ts\nFROM events\n"
+  return_type: aggregate
+  is_alert: true
+  alert_format: 'SMOKE OK: {events} event(s), {vessels} vessel(s), {first_ts} -> {last_ts}'
