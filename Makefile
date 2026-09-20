@@ -5,10 +5,11 @@ ARGS    ?= list
 
 TF_MAKE = $(MAKE) -C terraform PROJECT=$(PROJECT)
 
-.PHONY: help terraform-init terraform-plan terraform-apply terraform-state terraform-output \
+.PHONY: help terraform-bucket-init terraform-init terraform-plan terraform-apply terraform-state terraform-output \
         scheduler-pause scheduler-resume
 
 help:
+	@echo "make terraform-bucket-init - once per project: create its state bucket"
 	@echo "make terraform-init      - init against PROJECT's state bucket (PROJECT=$(PROJECT))"
 	@echo "make terraform-plan      - preview infra changes, safe anytime"
 	@echo "make terraform-apply     - apply infra changes, interactive confirm"
@@ -16,6 +17,9 @@ help:
 	@echo "make terraform-output    - service URLs, Redis host, scheduler jobs"
 	@echo "make scheduler-pause     - pause every ingestor tick"
 	@echo "make scheduler-resume    - resume every ingestor tick"
+
+terraform-bucket-init:
+	$(TF_MAKE) bucket-init
 
 terraform-init:
 	$(TF_MAKE) init

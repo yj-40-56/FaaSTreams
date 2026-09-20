@@ -10,21 +10,24 @@ In the final production architecture, live data will be pushed from external sou
 
 ## Provisioning with Terraform
 
-`terraform/` provisions the whole pipeline in one GCP project (`faas-pj` today):
-the network, Memorystore Redis and bastion, the `ais-stream` topic and pull
-subscription, the four services on direct VPC egress, and the four Cloud Scheduler
-jobs that restart ingestor sessions.
+`terraform/` provisions the whole pipeline in one GCP project: the network,
+Memorystore Redis and bastion, the `ais-stream` topic and pull subscription, the
+four services on direct VPC egress, and the four Cloud Scheduler jobs that
+restart ingestor sessions.
 
 ```bash
+export PROJECT=faas-pj       # the only per-deployment setting
 make terraform-init
 make terraform-plan          # preview infra changes, safe anytime
 make terraform-apply         # apply after reviewing the plan
 make help                    # full target list
 ```
 
-`terraform/README.md` covers environments, adopting existing resources, and the
-constraints (instance caps, shared vCPU, public endpoints). The `scripts/` deploy
-commands remain the alternative path.
+**[`DEPLOYING.md`](DEPLOYING.md) is the walkthrough for a fresh project**, and
+assumes no Terraform experience. `terraform/README.md` covers the stack itself:
+what it manages, why four Scheduler jobs, and the constraints (instance caps,
+shared vCPU, public endpoints). `scripts/deploy-sandbox.sh` remains the
+alternative `gcloud` path — use one or the other per project, not both.
 
 ## Worker
 
