@@ -2,15 +2,15 @@
 
 ## Overview
 
-This repository contains the codebase for our FaaS (Function-as-a-Service) based data stream processing system.
+This repository contains the codebase for our FaaS (Function-as-a-Service) based data stream processing system (**FaaSTreams**).
 
-In the final production architecture, live data will be pushed from external sources through a data queue and ingested into Redis, which serves as our temporary data storage. FaaS workers will then process this streaming data.
+In the final production architecture, live data (e.g. maritime AIS records) will be pushed from external sources through a data queue and ingested into Redis, which serves as our temporary data storage. FaaS workers will then process this streaming data.
 
 ---
 
 ## Worker
 
-FaaS worker (`src/worker`) that, given a time window and query from the windower, fetches the matching AIS records from Redis, loads them into DuckDB, runs the configured query, and emits proximity warnings for vessels approaching defined hazard zones.
+FaaS worker (`src/worker`) that, given a time window and query from the windower, fetches the matching spatiotemporal records (e.g. maritime AIS records) from Redis, loads them into DuckDB, runs the configured query, and emits query results or alerts (e.g., proximity warnings for vessels approaching defined hazard zones).
 
 ### Setup
 
@@ -56,7 +56,7 @@ For a local demonstration run terminal command:
 docker compose -f docker/docker-compose.dev.yml up --build
 ```
 
-When using this setup, ensure that the data folder contains a .csv with its header (column names).
+When using this setup, ensure that the data folder contains a target dataset .csv with its header (column names) matching the configured schema.
 
 To delete the setup run:
 
@@ -100,7 +100,7 @@ gcloud functions deploy data-sink --gen2 --runtime python312 --region europe-wes
   --env-vars-file env/gcloud-env-data-sink.yaml
 ```
 
-Then run the simulator to publish mock AIS data to the topic the pull subscription reads:
+Then run the simulator to publish streaming data (e.g. mock AIS events) to the topic the pull subscription reads:
 
 ```bash
 cd scripts && bash run-simulator.sh
@@ -119,7 +119,7 @@ Sessions overlap by design. A Scheduler job will not start a run while its own p
 The subscription is created separately, since a topic fans out to every subscription independently:
 
 ```bash
-bash scripts/create-pull-subscription.sh   # creates ais-stream-pull fresh
+bash scripts/create-pull-subscription.sh   # creates the pull subscription (e.g. ais-stream-pull)
 bash scripts/deploy-ingestor-pull.sh
 # then point a Cloud Scheduler job at ingestor-pull's URL
 ```
