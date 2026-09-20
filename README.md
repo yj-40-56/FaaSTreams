@@ -115,7 +115,7 @@ docker compose -f docker/docker-compose.dev.yml down -v
 
 The pipeline runs as four independently deployed Cloud Functions (gen2): `ingestor`, `windower`, `worker` and `data-sink`. Data flows `simulator → Pub/Sub → ingestor → Redis → windower → worker → data-sink`.
 
-See `scripts/deploy-ingestor-pull.sh`, `scripts/deploy-windower.sh`, `scripts/deploy-worker.sh`, and `scripts/deploy-data-sink.sh` for the exact `gcloud functions deploy` invocations. `scripts/deploy-ingestor.sh` deploys the retired push ingestor and is kept for reference only.
+Deploy them with Terraform (`DEPLOYING.md`), or with `scripts/deploy-sandbox.sh` for the `gcloud` path. The invocations below document how the hand-built `faastreams` project was deployed; they name that project's network and are kept for reference.
 
 ```bash
 # ingestor-pull - HTTP-triggered by Cloud Scheduler, drains a pull subscription
@@ -167,7 +167,7 @@ The subscription is created separately, since a topic fans out to every subscrip
 
 ```bash
 bash scripts/create-pull-subscription.sh   # creates ais-stream-pull fresh
-bash scripts/deploy-ingestor-pull.sh
+bash scripts/deploy-sandbox.sh --only ingestor-pull
 # then point a Cloud Scheduler job at ingestor-pull's URL
 ```
 
