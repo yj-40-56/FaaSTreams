@@ -9,10 +9,15 @@ Cloud Scheduler (4 jobs) -> ingestor-pull -> windower -> worker -> data-sink
                             ais-stream-pull          Memorystore Redis
 ```
 
-One stack per project. `faas-pj` (the personal sandbox) is the only one defined
-today: `environments/faas-pj.tfvars` + `faas-pj.backend.hcl`. The official
-`faastreams` project would be another such pair; it was set up by hand on the
-`default` network and is not described here yet.
+One stack per project, selected by `PROJECT`. It sets `project_id` and names the
+state bucket (`<project>-terraform-state`), so a new project needs no files of
+its own — see `DEPLOYING.md`. `environments/<project>.tfvars` is optional and
+holds only what differs from the defaults in `variables.tf`: `faas-pj` (the
+personal sandbox) overrides one setting, `faastreams-e2e-0919` (a from-scratch
+deploy test) another.
+
+The official `faastreams` project is not managed here: it was set up by hand on
+the `default` network, and `scripts/benchmark.sh` still targets it.
 
 ## What it manages
 
@@ -54,6 +59,7 @@ Prerequisites: `terraform` (or Docker, which the Makefile falls back to) and
 `gcloud auth application-default login`.
 
 ```bash
+export PROJECT=faas-pj             # or pass PROJECT= on each command
 make -C terraform bucket-init      # once per project: the state bucket
 make -C terraform init
 make -C terraform plan             # safe anytime

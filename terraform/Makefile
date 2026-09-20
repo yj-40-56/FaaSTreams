@@ -1,8 +1,13 @@
-# PROJECT picks environments/<PROJECT>.{tfvars,backend.hcl}: one stack and one
-# state per project, the state in a bucket inside that project. Credentials are
-# the gcloud application-default ones, so they must be for PROJECT's account.
+# PROJECT is the only thing a deployment needs: one stack and one state per
+# project, the state in a bucket inside that project. It sets project_id and
+# names the state bucket, so the two can't drift apart. environments/ holds
+# only a project's non-default settings, and most projects need none.
+# Credentials are the gcloud application-default ones, so they must be for
+# PROJECT's account.
 PROJECT ?= faas-pj
 REGION  ?= europe-west3
+
+export TF_VAR_project_id = $(PROJECT)
 
 TF_LOCAL := $(shell command -v terraform 2>/dev/null)
 ifdef TF_LOCAL
@@ -13,13 +18,15 @@ TF = docker run --rm $(TTY_FLAG) \
 	-v "$(shell pwd)/..:/workspace" \
 	-v "$(HOME)/.config/gcloud:/root/.config/gcloud:ro" \
 	-e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
+	-e TF_VAR_project_id \
 	-w /workspace/terraform \
 	hashicorp/terraform:latest
 endif
 
-VARS = -var-file="environments/$(PROJECT).tfvars"
+# Optional: only for settings that differ from the defaults in variables.tf.
+VARS = $(if $(wildcard environments/$(PROJECT).tfvars),-var-file="environments/$(PROJECT).tfvars")
 JOBS = $$($(TF) output -json scheduler_jobs | tr -d '[]"' | tr ',' ' ')
-STATE_BUCKET = $(shell sed -nE 's/^bucket *= *"([^"]+)".*/\1/p' environments/$(PROJECT).backend.hcl)
+STATE_BUCKET = $(PROJECT)-terraform-state
 
 # One-time per project: the bucket holding this project's state.
 bucket-init:
@@ -27,8 +34,11 @@ bucket-init:
 		--location=$(REGION) --uniform-bucket-level-access
 	gcloud storage buckets update gs://$(STATE_BUCKET) --versioning
 
+# A backend block can't read variables, so the bucket comes in at init time.
 init:
-	$(TF) init -reconfigure -backend-config="environments/$(PROJECT).backend.hcl"
+	$(TF) init -reconfigure \
+		-backend-config="bucket=$(STATE_BUCKET)" \
+		-backend-config="prefix=terraform/state"
 
 validate:
 	$(TF) validate

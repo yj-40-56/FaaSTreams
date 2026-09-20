@@ -16,8 +16,8 @@ terraform {
     }
   }
 
-  # Partial config: the bucket lives in the target project, so it comes from
-  # environments/<project>.backend.hcl at init time.
+  # Partial config: the bucket lives in the target project and a backend block
+  # can't read variables, so `make init` passes it as <project>-terraform-state.
   backend "gcs" {}
 }
 
