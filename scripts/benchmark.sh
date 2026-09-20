@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+# Flink comparison run. Targets the hand-built `faastreams` project, not a
+# Terraform stack: the coordinator service, bastion and subscriptions below
+# exist only there.
+PROJECT="${PROJECT:-faastreams}"
 REDIS_HOST="10.101.64.19"
 SUB_AIS="ais-stream-sub"
 SUB_SPE="spe-input-sub"
@@ -42,7 +46,7 @@ gcloud run services update coordinator-benchmark-sid \
   --max-instances=10
 
 cd ../src/simulator
-PUBSUB_PROJECT_ID=faastreams \
+PUBSUB_PROJECT_ID="$PROJECT" \
 PUBSUB_TOPIC_ID=ais-stream \
 SOURCE_NAME=ais_data_v1 \
 SIM_CSV_PATH="../$CSV_PATH" \

@@ -1,1 +1,0 @@
-gcloud functions deploy ingestor --gen2 --runtime go126 --region europe-west3 --memory 2048Mi --cpu 2 --source ../src/ingestor --entry-point IngestEvent --trigger-topic ais-stream --network default --subnet projects/faastreams/regions/europe-west3/subnetworks/default --env-vars-file ../env/gcloud-env-ingestor.yaml --max-instances 6 --concurrency 20
