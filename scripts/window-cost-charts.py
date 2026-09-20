@@ -163,11 +163,12 @@ def fig4(runs, outdir):
         ax.annotate(f"{y:.1f}s", (x, y), textcoords="offset points",
                     xytext=(0, -18), ha="center", fontsize=9, color=INK_2)
 
-    ax.annotate("below ~20s the wait is the whole window",
-                xy=(2.55, 13.5), xytext=(1.15, 30), color=INK, fontsize=9.5,
-                fontweight="bold",
+    share = med[-1] / w[-1]
+    ax.annotate(f"at {w[-1]}s the wait is {share:.0%} of the window",
+                xy=(len(w) - 1.08, (w[-1] + med[-1]) / 2), xytext=(1.6, 31),
+                color=INK, fontsize=9.5, fontweight="bold", ha="left",
                 arrowprops=dict(arrowstyle="->", color=MUTED, lw=1.4,
-                                connectionstyle="angle3,angleA=0,angleB=65"))
+                                connectionstyle="angle3,angleA=0,angleB=60"))
     ax.set_xticks(xs); ax.set_xticklabels([f"{v}s" for v in w])
     ax.set_ylim(0, 66)
     ax.set_xlabel("window size")
