@@ -196,8 +196,8 @@ object; editing `query_config_file` after deployment does not update it.
 
 ## Redis Key Layout
 
-| Component             | Key                                                             | Mode         | Source                                                                             |
-| --------------------- | --------------------------------------------------------------- | ------------ | ---------------------------------------------------------------------------------- |
+| Component             | Key                                                             | Mode         | Source  |
+| :--- | :--- | :--- | :--- |
 | ingestor              | `data:<source>`                                                 | writes       | `src/ingestor/main.go` (`dataKey = "data"`)                                        |
 | ingestor              | `watermark:<source>`                                            | writes       | `src/ingestor/watermark.go` (hash, one field per instance)                         |
 | ingestor              | `watermark:floor:<source>`                                      | **reads**    | `src/ingestor/watermark.go` (`seedWatermarks`); owned by the windower               |
