@@ -1,9 +1,8 @@
 # Sliding-window e2e test config: the smoke tumbling query as ground truth plus
 # one sliding query over the same source.
 #
-# The slide is hard-coded to 60s in windower's handleSliding, so window_size
-# must be a multiple of 60 or events fall between windows. 120 gives one
-# overlapping window per minute, each covering two tumbling windows.
+# A 120s window sliding every 60s: one overlapping window per minute, each
+# covering two tumbling windows.
 #
 # Check: a sliding window [T, T+120) must count exactly the sum of the tumbling
 # windows [T, T+60) and [T+60, T+120) -- both read the same Redis zset by score,
@@ -74,6 +73,7 @@ queries:
   data_source: ais_data_v1
   window_type: sliding
   window_size: 120
+  slide: 60
   query: "SELECT\n  COUNT(*)             AS events,\n  COUNT(DISTINCT MMSI) AS vessels,\n  MIN(Timestamp)\
     \       AS first_ts,\n  MAX(Timestamp)       AS last_ts\nFROM events\n"
   return_type: aggregate

@@ -131,5 +131,10 @@ func (q Query) validate() error {
 	if q.WindowType == "tumbling" && q.SlideSeconds() != q.WindowSize {
 		return fmt.Errorf("tumbling windows cannot slide: drop slide, or set window_type: sliding")
 	}
+	// Defaulting to the window size would quietly make this tumbling, which is
+	// not what the author asked for.
+	if q.WindowType == "sliding" && q.Slide == 0 {
+		return fmt.Errorf("sliding windows need an explicit slide; window_size %ds on its own means tumbling", q.WindowSize)
+	}
 	return nil
 }

@@ -21,6 +21,7 @@ func TestValidate(t *testing.T) {
 		{"sliding overlapping", Query{WindowType: "sliding", WindowSize: 120, Slide: 60}, false},
 		{"sliding not dividing the window", Query{WindowType: "sliding", WindowSize: 100, Slide: 30}, false},
 		{"sliding degenerate to tumbling", Query{WindowType: "sliding", WindowSize: 60, Slide: 60}, false},
+		{"sliding without a slide", Query{WindowType: "sliding", WindowSize: 120}, true},
 		{"slide wider than the window leaves gaps", Query{WindowType: "sliding", WindowSize: 60, Slide: 90}, true},
 		{"negative slide", Query{WindowType: "sliding", WindowSize: 60, Slide: -1}, true},
 		{"missing window size", Query{WindowType: "tumbling"}, true},
