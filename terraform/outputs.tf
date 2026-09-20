@@ -1,3 +1,8 @@
+output "region" {
+  description = "Deployed region used by operational commands."
+  value       = var.region
+}
+
 output "ingestor_pull_url" {
   value = module.ingestor_pull.url
 }

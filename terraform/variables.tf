@@ -55,13 +55,13 @@ variable "redis_version" {
 }
 
 variable "enable_redis_bastion" {
-  description = "VM for reaching Redis's private IP: redis-cli sessions and the FLUSHALL in deploy-sandbox.sh --clean."
+  description = "VM for reaching Redis's private IP through the redis_tunnel_cmd output."
   type        = bool
   default     = true
 }
 
 variable "bastion_allow_external_ssh" {
-  description = "Open port 22 on the bastion to the internet. deploy-sandbox.sh uses plain `gcloud compute ssh`, which needs it; with --tunnel-through-iap the IAP-only rule is enough."
+  description = "Open port 22 on the bastion to the internet for direct SSH. The redis_tunnel_cmd output uses IAP and does not need this."
   type        = bool
   default     = false
 }

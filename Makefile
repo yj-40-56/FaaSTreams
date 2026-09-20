@@ -1,6 +1,5 @@
 # Thin wrappers around terraform/Makefile, which has the full target set.
 
-PROJECT ?= faas-pj
 ARGS    ?= list
 
 TF_MAKE = $(MAKE) -C terraform PROJECT=$(PROJECT)

@@ -1,5 +1,4 @@
-# Pause state is not declarable in the provider: it is an imperative
-# `gcloud scheduler jobs pause|resume`, see the Makefile targets.
+# Create jobs paused; operators control subsequent pause/resume via Makefile targets.
 resource "google_cloud_scheduler_job" "ingestor_tick" {
   for_each = var.schedules
 
@@ -8,6 +7,11 @@ resource "google_cloud_scheduler_job" "ingestor_tick" {
   region    = var.region
   schedule  = each.value
   time_zone = "Etc/UTC"
+  paused    = true
+
+  lifecycle {
+    ignore_changes = [paused]
+  }
 
   # Holds the tick open for the whole session, so Scheduler skips this job's
   # next run while it is still pulling.

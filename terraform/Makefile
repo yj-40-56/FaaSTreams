@@ -1,11 +1,9 @@
-# PROJECT is the only thing a deployment needs: one stack and one state per
-# project, the state in a bucket inside that project. It sets project_id and
-# names the state bucket, so the two can't drift apart. environments/ holds
-# only a project's non-default settings, and most projects need none.
-# Credentials are the gcloud application-default ones, so they must be for
-# PROJECT's account.
-PROJECT ?= faas-pj
-REGION  ?= europe-west3
+.DEFAULT_GOAL := plan
+
+# One stack and GCS backend per explicit PROJECT. Operational targets verify
+# the initialized backend before reading state or making changes.
+export PROJECT
+STATE_BUCKET_LOCATION ?= europe-west3
 
 export TF_VAR_project_id = $(PROJECT)
 
@@ -19,23 +17,32 @@ TF = docker run --rm $(TTY_FLAG) \
 	-v "$(HOME)/.config/gcloud:/root/.config/gcloud:ro" \
 	-e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
 	-e TF_VAR_project_id \
+	-e TF_DATA_DIR \
+	-e TF_WORKSPACE \
 	-w /workspace/terraform \
 	hashicorp/terraform:latest
 endif
 
 # Optional: only for settings that differ from the defaults in variables.tf.
 VARS = $(if $(wildcard environments/$(PROJECT).tfvars),-var-file="environments/$(PROJECT).tfvars")
-JOBS = $$($(TF) output -json scheduler_jobs | tr -d '[]"' | tr ',' ' ')
 STATE_BUCKET = $(PROJECT)-terraform-state
+# Explicit CLI variable takes precedence over any accidental tfvars project_id.
+PROJECT_VAR = -var="project_id=$(PROJECT)"
+
+check-project:
+	@python3 check-context.py --project-only
+
+check-context: check-project
+	@python3 check-context.py
 
 # One-time per project: the bucket holding this project's state.
-bucket-init:
+bucket-init: check-project
 	gcloud storage buckets create gs://$(STATE_BUCKET) --project=$(PROJECT) \
-		--location=$(REGION) --uniform-bucket-level-access
+		--location=$(STATE_BUCKET_LOCATION) --uniform-bucket-level-access
 	gcloud storage buckets update gs://$(STATE_BUCKET) --versioning
 
 # A backend block can't read variables, so the bucket comes in at init time.
-init:
+init: check-project
 	$(TF) init -reconfigure \
 		-backend-config="bucket=$(STATE_BUCKET)" \
 		-backend-config="prefix=terraform/state"
@@ -43,37 +50,36 @@ init:
 validate:
 	$(TF) validate
 
-plan:
-	$(TF) plan $(VARS)
+plan: check-context
+	$(TF) plan $(VARS) $(PROJECT_VAR)
 
 # Exit 2 when deployed infrastructure differs from the config.
-plan-check:
-	$(TF) plan $(VARS) -detailed-exitcode -input=false -lock=false
+plan-check: check-context
+	$(TF) plan $(VARS) $(PROJECT_VAR) -detailed-exitcode -input=false -lock=false
 
-apply:
-	$(TF) apply $(VARS)
+apply: check-context
+	$(TF) apply $(VARS) $(PROJECT_VAR)
 
 # Everything, Redis data included. Asks for PROJECT by name first.
-destroy:
+destroy: check-context
 	@read -p "Destroy every pipeline resource in $(PROJECT)? Type the project ID: " p && [ "$$p" = "$(PROJECT)" ]
-	$(TF) destroy $(VARS)
+	$(TF) destroy $(VARS) $(PROJECT_VAR)
 
 ARGS ?= list
-state:
+state: check-context
 	$(TF) state $(ARGS)
 
-output:
-	$(TF) output
+output: check-context
+	$(TF) output $(OUTPUT_ARGS)
 
-# Pause state is not declarable in the provider, so it lives here.
-scheduler-pause:
-	for job in $(JOBS); do \
-		gcloud scheduler jobs pause $$job --location=$(REGION) --project=$(PROJECT); \
+# New jobs are paused. Their subsequent pause/resume state is managed here.
+scheduler-pause scheduler-resume: check-context
+	@set -eu; \
+	region=$$($(TF) output -raw region); \
+	jobs_json=$$($(TF) output -json scheduler_jobs); \
+	jobs=$$(printf '%s' "$$jobs_json" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)))'); \
+	for job in $$jobs; do \
+		gcloud scheduler jobs $(patsubst scheduler-%,%,$@) "$$job" --location="$$region" --project="$(PROJECT)"; \
 	done
 
-scheduler-resume:
-	for job in $(JOBS); do \
-		gcloud scheduler jobs resume $$job --location=$(REGION) --project=$(PROJECT); \
-	done
-
-.PHONY: bucket-init init validate plan plan-check apply destroy state output scheduler-pause scheduler-resume
+.PHONY: check-project check-context bucket-init init validate plan plan-check apply destroy state output scheduler-pause scheduler-resume

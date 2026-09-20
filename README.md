@@ -2,9 +2,9 @@
 
 ## Overview
 
-This repository contains the codebase for our FaaS (Function-as-a-Service) based data stream processing system.
+This repository contains the codebase for our FaaS (Function-as-a-Service) based data stream processing system (**FaaSTreams**).
 
-In the final production architecture, live data will be pushed from external sources through a data queue and ingested into Redis, which serves as our temporary data storage. FaaS workers will then process this streaming data.
+In the final production architecture, live data (e.g. maritime AIS records) will be pushed from external sources through a data queue and ingested into Redis, which serves as our temporary data storage. FaaS workers will then process this streaming data.
 
 ---
 
@@ -16,7 +16,8 @@ four services on direct VPC egress, and the four Cloud Scheduler jobs that
 restart ingestor sessions.
 
 ```bash
-export PROJECT=faas-pj       # the only per-deployment setting
+export PROJECT=your-project-id # required; no default project
+make terraform-bucket-init   # once per project
 make terraform-init
 make terraform-plan          # preview infra changes, safe anytime
 make terraform-apply         # apply after reviewing the plan
@@ -24,14 +25,13 @@ make help                    # full target list
 ```
 
 **[`DEPLOYING.md`](DEPLOYING.md) is the walkthrough for a fresh project**, and
-assumes no Terraform experience. `terraform/README.md` covers the stack itself:
+assumes no Terraform experience. [terraform/README.md](terraform/README.md) covers the stack itself:
 what it manages, why four Scheduler jobs, and the constraints (instance caps,
-shared vCPU, public endpoints). `scripts/deploy-sandbox.sh` remains the
-alternative `gcloud` path — use one or the other per project, not both.
+shared vCPU, public endpoints).
 
 ## Worker
 
-FaaS worker (`src/worker`) that, given a time window and query from the windower, fetches the matching AIS records from Redis, loads them into DuckDB, runs the configured query, and emits proximity warnings for vessels approaching defined hazard zones.
+FaaS worker (`src/worker`) that, given a time window and query from the windower, fetches the matching spatiotemporal records (e.g. maritime AIS records) from Redis, loads them into DuckDB, runs the configured query, and emits query results or alerts (e.g., proximity warnings for vessels approaching defined hazard zones).
 
 ### Setup
 
@@ -71,13 +71,17 @@ In production this endpoint is called by the windower, which POSTs a JSON body s
 
 ## E2E Example - local
 
-For a local demonstration run terminal command:
+From the repository root, place the example AIS dataset at `data/ais.csv`.
+Its CSV header (column names) must match the configured schema in
+`env/query-config-reference.yaml`. The dataset is not included in the repository.
+For another dataset, update the simulator settings in
+`docker/docker-compose.dev.yml` and the source/query definitions together.
+
+Start the local demonstration:
 
 ```bash
 docker compose -f docker/docker-compose.dev.yml up --build
 ```
-
-When using this setup, ensure that the data folder contains a .csv with its header (column names).
 
 The stack mirrors the deployed topology in `terraform/main.tf`. Every application
 container runs the same source and the same entry point Terraform deploys, with
@@ -86,9 +90,8 @@ are substituted only where they have to be: the Pub/Sub emulator for Pub/Sub,
 fake-gcs-server for the query-config bucket, a curl loop for Cloud Scheduler, and
 plain Redis for Memorystore.
 
-Cloud Tasks and the pinger are deliberately not modelled. `IngestPull` paces the
-windower from inside its own session, so the pinger is a redundant second trigger
-path that exists only in the cloud.
+Cloud Tasks and the legacy pinger are absent from both the local stack and the
+Terraform deployment. `IngestPull` triggers the windower from inside each session.
 
 Service endpoints, once up:
 
@@ -108,52 +111,35 @@ docker compose -f docker/docker-compose.dev.yml exec redis redis-cli zrange anal
 Note that the bundled simulator publishes `ais_data_v1` only, so the queries bound
 to `t-drive_data_v1` and to `generic` log empty windows on every tick.
 
-To delete the setup run:
+To stop and remove the local containers:
 
 ```bash
-docker compose -f docker/docker-compose.dev.yml down -v
+docker compose -f docker/docker-compose.dev.yml down
 ```
+
+Add `-v` to also remove Docker volumes associated with the stack. The local Redis
+configuration disables persistence, so its results are lost when its container
+is removed even without `-v`. The dataset in `data/` is a host bind mount and is
+not deleted by either command.
 
 ## E2E Example - Google Cloud
 
-The pipeline runs as four independently deployed Cloud Functions (gen2): `ingestor`, `windower`, `worker` and `data-sink`. Data flows `simulator → Pub/Sub → ingestor → Redis → windower → worker → data-sink`.
+The pipeline runs as four independently deployed Cloud Functions (gen2): `ingestor-pull`, `windower`, `worker` and `data-sink`. Data flows `simulator → Pub/Sub → ingestor → Redis → windower → worker → data-sink`.
 
-Deploy them with Terraform (`DEPLOYING.md`), or with `scripts/deploy-sandbox.sh` for the `gcloud` path. The invocations below document how the hand-built `faastreams` project was deployed; they name that project's network and are kept for reference.
+Deploy with Terraform using [DEPLOYING.md](DEPLOYING.md). From the repository
+root, with `PROJECT` still set to the deployed project, enable the four Scheduler
+jobs (new deployments start paused):
 
 ```bash
-# ingestor-pull - HTTP-triggered by Cloud Scheduler, drains a pull subscription
-gcloud functions deploy ingestor-pull --gen2 --runtime go126 --region europe-west3 \
-  --memory 2048Mi --cpu 2 --source src/ingestor --entry-point IngestPull \
-  --trigger-http --allow-unauthenticated --network default \
-  --subnet projects/faastreams/regions/europe-west3/subnetworks/default \
-  --env-vars-file env/gcloud-env-ingestor-pull.yaml --max-instances 4 --concurrency 1
-
-# windower - HTTP-triggered, invoked to process pending windows
-gcloud functions deploy windower --gen2 --runtime go126 --region europe-west3 \
-  --memory 256Mi --source src/windower --entry-point ProcessWindows \
-  --trigger-http --allow-unauthenticated --network default \
-  --subnet projects/faastreams/regions/europe-west3/subnetworks/default \
-  --env-vars-file env/gcloud-env-windower.yaml
-
-# worker - HTTP-triggered by the windower, runs DuckDB queries over a Redis window
-gcloud functions deploy worker --gen2 --runtime python312 --region europe-west3 \
-  --memory 1024Mi --source src/worker --entry-point handler \
-  --trigger-http --allow-unauthenticated --network default \
-  --subnet projects/faastreams/regions/europe-west3/subnetworks/default \
-  --env-vars-file env/gcloud-env-worker.yaml --timeout 540
-
-# data-sink - HTTP-triggered by the worker, persists query results
-gcloud functions deploy data-sink --gen2 --runtime python312 --region europe-west3 \
-  --memory 256Mi --source src/data-sink --entry-point handler \
-  --trigger-http --allow-unauthenticated --network default \
-  --subnet projects/faastreams/regions/europe-west3/subnetworks/default \
-  --env-vars-file env/gcloud-env-data-sink.yaml
+make scheduler-resume
 ```
 
-Then run the simulator to publish mock AIS data to the topic the pull subscription reads:
+Resume enables future scheduled runs; it does not invoke the ingestor immediately.
+Wait for an ingestor session to start before publishing, then run the simulator:
 
 ```bash
-cd scripts && bash run-simulator.sh
+(cd scripts && bash run-simulator.sh)
+make scheduler-pause          # after the simulator finishes
 ```
 
 It is configured by env vars in that script, not by the query config. `SIM_SCALE_FACTOR` is CSV duration over desired real duration, and `SIM_RUNTIME` caps the run in real time. The ingestor must already be pulling when it starts: a paused Scheduler job means nothing drains the subscription, and Pub/Sub delivers the resulting backlog out of order.
@@ -166,33 +152,47 @@ Terminology: a **Tick** is one Scheduler-triggered invocation; a **Drain** is th
 
 Sessions overlap by design. A Scheduler job will not start a run while its own previous attempt is open, so one job holds a session roughly `maxSessionDuration / 120s` of the time; several jobs on staggered schedules are what keep the subscription continuously pulled. Overlap is safe because the writes are idempotent `ZADD`s and the windower takes the minimum watermark across live instances.
 
-The subscription is created separately, since a topic fans out to every subscription independently:
+Terraform creates and manages `ais-stream-pull` and the Scheduler jobs together
+with the ingestor. Keep the subscription between runs; use `make scheduler-pause`
+and `make scheduler-resume` to control ingestion. Messages published while
+paused accumulate as backlog, so stop the simulator when pausing ingestion.
 
-```bash
-bash scripts/create-pull-subscription.sh   # creates ais-stream-pull fresh
-bash scripts/deploy-sandbox.sh --only ingestor-pull
-# then point a Cloud Scheduler job at ingestor-pull's URL
-```
-
-`scripts/delete-pull-subscription.sh` removes it again so it does not accumulate backlog between runs.
+The `create-pull-subscription.sh` and `delete-pull-subscription.sh` scripts are
+legacy helpers for manually managed deployments. Do not use them for a
+Terraform-managed subscription.
 
 The push ingestor (`IngestEvent` in `src/ingestor/main.go`) is retired but still compiles; it fell behind under load, where per-message invocation overhead dominated. The two were never deployed at the same time. Its entry point is left in place because `init()` runs for every entry point built from this source directory, so removing it is a separate change.
 
 ## Query Config
 
-The query/source definitions (`query-config.yaml`) used by the simulator and worker are stored in GCS at `gs://faastreams-config/query-config.yaml`.
+The ingestor and windower load the query/source definitions from GCS at startup.
+The windower passes the selected query and source schema to the worker in each
+request. The simulator uses environment variables; its source name and timestamp
+settings must match the source definition in the query config.
 
-To view its contents:
+Terraform seeds `gs://<project>-config/query-config.yaml` from
+`env/query-config-reference.yaml` by default. The bucket, object name and initial
+file can be overridden through Terraform variables. Run `make terraform-output`
+to see the deployed `query_config` URI.
+
+From the repository root, using the default bucket and object names:
 
 ```bash
-gsutil cat gs://faastreams-config/query-config.yaml
+gcloud storage cat "gs://${PROJECT}-config/query-config.yaml" --project="$PROJECT"
+gcloud storage cp "gs://${PROJECT}-config/query-config.yaml" ./query-config.yaml --project="$PROJECT"
 ```
 
-To download it locally:
+To edit and activate the config:
 
 ```bash
-gsutil cp gs://faastreams-config/query-config.yaml ./query-config.yaml
+(cd scripts && ./update-config.sh)
 ```
+
+For non-default settings, set `CONFIG_BUCKET` and `CONFIG_OBJECT` to match the
+deployment. The script reads the deployed region from Terraform outputs, uploads
+the config, and rolls the ingestor and windower so they reload it. Uploading the object alone leaves warm instances
+using their previous config. Terraform ignores later changes to the seeded
+object; editing `query_config_file` after deployment does not update it.
 
 ## Redis Key Layout
 

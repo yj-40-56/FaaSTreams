@@ -2,7 +2,8 @@
 set -euo pipefail
 
 PROJECT="${PROJECT:?set PROJECT to the target GCP project, e.g. PROJECT=faas-pj $0}"
-REGION="${REGION:-europe-west3}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REGION="$(make --no-print-directory -s -C "$REPO_ROOT/terraform" output OUTPUT_ARGS='-raw region')"
 CONFIG_BUCKET="${CONFIG_BUCKET:-$PROJECT-config}"
 CONFIG_OBJECT="${CONFIG_OBJECT:-query-config.yaml}"
 

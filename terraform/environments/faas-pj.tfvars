@@ -3,5 +3,5 @@
 #
 # project_id comes from PROJECT; only non-default settings belong here.
 
-# deploy-sandbox.sh --clean flushes Redis over plain `gcloud compute ssh`.
+# Allow direct SSH in the personal sandbox.
 bastion_allow_external_ssh = true

@@ -88,7 +88,7 @@ resource "google_storage_bucket" "query_config" {
 }
 
 # Seeds the object once so the ingestor and windower can start on a fresh
-# project; later swaps (deploy-sandbox.sh --config) are not reverted.
+# project; later config uploads are not reverted.
 resource "google_storage_bucket_object" "query_config" {
   name   = var.query_config_object
   bucket = google_storage_bucket.query_config.name

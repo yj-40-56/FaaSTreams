@@ -33,6 +33,7 @@ wants the defaults needs no files of its own.
   account with access to the target project.
 - **`terraform`** — optional. Without it the Makefile falls back to the
   `hashicorp/terraform` Docker image automatically.
+- **`python3`** — for the local project/backend guard and Scheduler commands.
 - **`go`** — only to run the simulator.
 - **The AIS CSV** at `data/ais.csv`. It is not in the repo (`.gitignore` excludes
   `data/`), and it is ~3 GB. Ask for it separately.
@@ -42,6 +43,8 @@ Memorystore instance. A billing-enabled project normally has room; a trial
 account may not.
 
 ## Deploy
+
+Run the commands below from the repository root.
 
 ```bash
 export PROJECT=your-project-id        # everything below reads this
@@ -59,15 +62,9 @@ First apply takes roughly ten minutes. Most of it is enabling APIs (with a
 deliberate 60s settle), the Private Services Access peering, and the Redis
 instance.
 
-Then immediately:
-
-```bash
-make scheduler-pause
-```
-
-**Do not skip this.** The provider cannot express a Scheduler job's paused
-state, so the four `ingestor-tick-*` jobs are created *enabled* and start firing
-every two minutes as soon as apply finishes.
+New Scheduler jobs are created **paused**. Resume them when ready to feed the
+pipeline. Terraform ignores subsequent changes to their paused state, so an
+apply preserves manual pause/resume choices, including for existing jobs.
 
 Check what you got:
 
@@ -79,7 +76,13 @@ make terraform-output                 # service URLs, Redis host, job names
 
 ```bash
 make scheduler-resume
-cd scripts && ./run-simulator.sh      # reads PROJECT; blocks for SIM_RUNTIME
+```
+
+This enables all four jobs at their next scheduled times; it does not invoke the
+ingestor immediately. Wait for an ingestor session to start before publishing:
+
+```bash
+(cd scripts && ./run-simulator.sh)      # reads PROJECT; blocks for SIM_RUNTIME
 ```
 
 `SIM_RUNTIME`, `SIM_SCALE_FACTOR` and `SIM_CSV_PATH` override the defaults
@@ -88,7 +91,7 @@ cd scripts && ./run-simulator.sh      # reads PROJECT; blocks for SIM_RUNTIME
 Results land in the data-sink. To change the query, edit the config in place:
 
 ```bash
-cd scripts && ./update-config.sh      # opens $EDITOR, uploads, rolls both services
+(cd scripts && ./update-config.sh)      # opens $EDITOR, uploads, rolls both services
 ```
 
 Pause the ticks again when you stop:
@@ -112,21 +115,32 @@ Only for values that differ from `terraform/variables.tf`. Create
 `terraform/environments/<project>.tfvars` and set just those:
 
 ```hcl
-query_config_file = "../env/query-config-smoke.yaml"   # a lighter initial query
+query_config_file = "../env/query-config-sliding-30.yaml" # alternate initial query
 redis_memory_size_gb = 2                               # smaller Redis
 enable_redis_bastion = false                           # skip the bastion VM
+region = "europe-west1"                               # optional deployment region
 ```
 
-Do not set `project_id` there — it comes from `PROJECT`.
+Do not set `project_id` there — it comes from `PROJECT`. Scheduler commands and
+`update-config.sh` read the deployed region from Terraform outputs. After
+upgrading an existing stack to include the `region` output, run
+`make terraform-apply` before using those commands.
+
+The state bucket location is independent of the deployment region. Override it
+only when creating the bucket, for example:
+`make terraform-bucket-init STATE_BUCKET_LOCATION=europe-west1`.
 
 ## Two things that will bite
 
-**Don't mix Terraform and `scripts/deploy-sandbox.sh` on one project.** The
-script deploys the same functions with `gcloud`. Terraform's state then
-disagrees with reality, and the next `apply` reverts the script's changes. Pick
-one path per project. The script's `--clean` (reset the subscription, flush
-Redis) is safe to use either way.
+**Use Terraform for infrastructure changes.** Manual function deployments and
+subscription creation/deletion can drift from Terraform's configuration; a later
+`apply` can revert those changes. Query config content is intentionally managed
+outside Terraform after its initial upload; use `scripts/update-config.sh` to
+edit it and roll the services that load it.
 
-**`terraform init` binds to one project's state bucket.** If you init with
-`PROJECT` set and then drop it from a later command, the default (`faas-pj`)
-takes over. `export PROJECT=` once avoids this.
+**Select the project explicitly.** `PROJECT` has no default. Export it once per
+terminal, and run `make terraform-init` whenever switching projects. Makefile
+targets check that the initialized GCS backend matches the selected project and
+uses the default Terraform workspace before reading state or operating on the
+stack. A mismatch stops the command with instructions to reinitialize. Use the
+Makefile targets to retain this guard; direct Terraform CLI commands bypass it.
